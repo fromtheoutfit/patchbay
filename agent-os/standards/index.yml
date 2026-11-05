@@ -1,0 +1,13 @@
+# Agent OS Standards Index
+
+base:
+  process/ownership:
+    description: A person owns every commit, pull request, approval and merge; an agent never lands work, and a system-wide tool is asked for before it is installed
+  process/standards-index:
+    description: Two-level index keyed by path relative to its section without the .md, one description line saying what the standard decides, every standard indexed and nothing else, and a consuming project's base section replaced whole by the sync at the pinned commit and never edited by hand
+  process/standards-retrospective:
+    description: The last step of every gate asks four questions of the diff, verifies a rewritten standard against shipped code, proposes a base change instead of editing it in place, and keeps every standards edit approved by a person
+  process/standards-sync:
+    description: A consuming project takes base/ whole from one commit of patchbay-standards by scripts/sync-standards.sh, origin's default branch unless a ref is named and never the working tree, pins it in .version, holds the copy and its base section byte-identical to that commit with --check as a gate step, regenerates the base section alone with --index-only, and syncs forward deliberately in its own change set
+  process/verification-gate:
+    description: One scripts/gate.sh runs every runnable step in a fixed order and stops at the first failure, then Docs, Version and the retrospective as judgment; tool pins in the script, rules in a versioned config, CI runs the same script and nothing else with every action pinned to a commit, every step proven to fail by a negative test, and the gate's files changed only in their own spec
