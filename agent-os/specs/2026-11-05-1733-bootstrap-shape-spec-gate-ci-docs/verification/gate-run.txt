@@ -1,0 +1,19 @@
+Gate run 2026-11-05 on branch feature/1-bootstrap-shape-spec-claudemd-gate-with-the-drift-check-ci-readme-changelog, the last act before hand-over of the bootstrap spec (issue #1), rerun after the
+Ownership phrases in CLAUDE.md were adapted on the owner's instruction.
+
+$ scripts/gate.sh
+
+== 1/2  bash -n on every file under scripts/
+ok   scripts/gate-negative-tests.sh
+ok   scripts/gate.sh
+ok   scripts/sync-standards.sh
+
+== 2/2  scripts/sync-standards.sh --check: agent-os/standards/base/, the base: section and the script match patchbay-standards at the commit in .version (../patchbay-standards)
+check base standards against b3fc2fe7aa61147ae688f946e2533ae21902713b  (/Users/michaelwitwicki/Code/Audio/patchbay-standards)
+  index    base: section identical
+  script   scripts/sync-standards.sh matches
+{"mode":"check","upstream":"/Users/michaelwitwicki/Code/Audio/patchbay-standards","commit":"b3fc2fe7aa61147ae688f946e2533ae21902713b","missing":[],"extra":[],"changed":[],"index":"identical","script":"matches","ok":true}
+ok   agent-os/standards/base and the base: section of agent-os/standards/index.yml match patchbay-standards at b3fc2fe7aa61147ae688f946e2533ae21902713b
+
+Gate steps 1-2 passed. Steps 3-5 are judgment, recorded in shape.md: Docs, Version, the standards retrospective.
+exit=0

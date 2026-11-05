@@ -63,8 +63,8 @@ Use AskUserQuestion:
 Is there similar code in this codebase I should reference?
 
 Examples:
-- "The comments feature is similar to what we're building"
-- "Look at how src/features/notifications/ handles real-time updates"
+- "Look at how scripts/gate.sh reports a step and stops at the first failure"
+- "scripts/gate-negative-tests.sh is the fixture shape for a test on a scratch copy"
 - "No existing references"
 
 (Point me to files, folders, or features to study)
@@ -91,21 +91,54 @@ If no product folder exists, skip this step.
 
 ### Step 5: Surface Relevant Standards
 
-Read `agent-os/standards/index.yml` to identify relevant standards based on the feature being built.
+Standards come in two kinds, and the difference matters here and again in the gate:
+
+- **Base standards** live under `agent-os/standards/base/`, synced from `patchbay-standards` by
+  `scripts/sync-standards.sh` and pinned to the commit in `agent-os/standards/base/.version`. They
+  are owned by `patchbay-standards`, and this repository is a consuming project: **a base standard
+  is never edited here**, not during a spec and not in its retrospective. A change the spec would
+  make to one is recorded in `shape.md` under `## Standards retrospective (proposed, base)` and
+  becomes a pull request to `patchbay-standards` (the sibling checkout, `../patchbay-standards`),
+  approved by a person; this repository takes it when it next moves its pin.
+- **Project standards**, this repository's own files under `agent-os/standards/` outside `base/`,
+  belong to this repository and change in its retrospective.
+
+#### Step 5a: Core Architecture (always included)
+
+*Empty for now.* The toolchain, layout and typing standards will fill this tier: the standards that
+apply to every spec in this repository, included without asking, with their full content in
+`standards.md`. Until then, record "none yet; see Step 5a" under a "Core Architecture" heading in
+`shape.md`, so the gap stays visible rather than silently reading as "nothing applies".
+
+#### Step 5b: Feature-Specific Standards
+
+Read `agent-os/standards/index.yml` to identify standards relevant to the feature being built
+(in addition to the core tier above, once it exists). Its `base:` section is synced and never
+edited by hand; a key there is a path relative to `base/` without the `.md`, so
+`process/verification-gate` is `agent-os/standards/base/process/verification-gate.md`. The
+repository's own sections sit beside it and resolve to `agent-os/standards/<section>/<key>.md`.
 
 Use AskUserQuestion to confirm:
 
 ```
-Based on what we're building, these standards may apply:
+The core architecture tier (Step 5a) is empty for now; nothing is included without asking.
 
-1. **api/response-format** — API response envelope structure
-2. **api/error-handling** — Error codes and exception handling
-3. **database/migrations** — Migration patterns
+These standards may apply:
 
-Should I include these in the spec? (yes / adjust: remove 3, add frontend/forms)
+1. **{folder/standard}** — {what it covers}
+2. **{folder/standard}** — {what it covers}
+
+Should I include these in the spec? (yes / adjust: remove 2, add {folder/standard})
 ```
 
 Read the confirmed standards files to include their content in the plan context.
+
+**What you read here is a snapshot.** `standards.md` records the standards *as they read
+when the spec was shaped*. If the work teaches them something, they change at the END of
+the spec, in the retrospective (gate step 5) — not by editing `standards.md` after the fact.
+If the plan needs a pattern no standard covers, that is a standards change to decide with
+the user now, not an ad-hoc call to make during implementation. For a base standard that
+decision is a proposal (see above), never an in-place edit.
 
 ### Step 6: Generate Spec Folder Name
 
@@ -151,6 +184,34 @@ Create `agent-os/specs/{folder-name}/` with:
 
 ...
 
+## Task N (FINAL — ALWAYS INCLUDED): Verification gate
+
+Run the full verification gate, in order. The spec is not complete until every step passes:
+
+1. `bash -n` on every file under `scripts/` — every script must parse
+2. `scripts/sync-standards.sh --check` — `agent-os/standards/base/`, the `base:` section of
+   `agent-os/standards/index.yml` and the script itself are byte-identical to `patchbay-standards`
+   at the commit in `agent-os/standards/base/.version`, read from the sibling checkout
+   `../patchbay-standards`
+3. **Docs** — the documentation the change touches reads true after it: `README.md`, `CLAUDE.md`,
+   the header comments and pointers in the files changed, and every standard that names them.
+   Record what was checked in `shape.md`.
+4. **Version** — the change is recorded under `[Unreleased]` in `CHANGELOG.md`, and the version
+   in `pyproject.toml` bumped when a release is cut. Record it in `shape.md`.
+5. **Standards retrospective** — per `agent-os/standards/base/process/standards-retrospective.md`:
+   check what this spec taught against the standards, add any pattern it invented,
+   correct anything it proved stale, and keep `index.yml` in step — as an edit for a
+   project standard, as a proposal under `## Standards retrospective (proposed, base)` for
+   a base standard. List those edits separately from the feature's when reporting, so they
+   can be committed apart from it. If the spec taught nothing, record
+   `Standards retrospective: no changes` in `shape.md`. "No changes" is valid; silence is not.
+
+`scripts/gate.sh` runs steps 1–2 as one command. Steps 3–5 are judgment, in that order, recorded
+in `shape.md`; the retrospective is always last.
+
+If any step fails, fix the underlying issue (do not bypass) and rerun before marking the
+spec complete.
+
 ---
 
 Does this plan structure look right? I'll fill in the implementation tasks next.
@@ -165,6 +226,11 @@ After Task 1 is confirmed, continue building out the remaining implementation ta
 
 Each task should be specific and actionable.
 
+**Always include the final verification task** (`scripts/gate.sh` — `bash -n` over `scripts/`,
+`scripts/sync-standards.sh --check` — then Docs, Version and the standards retrospective) as the
+last task in every plan, regardless of feature size. Do not skip this for "small" changes — a
+one-file fix is exactly the kind of spec that quietly invents a pattern.
+
 ### Step 9: Ready for Execution
 
 When the full plan is ready:
@@ -174,6 +240,10 @@ Plan complete. When you approve and execute:
 
 1. Task 1 will save all spec documentation first
 2. Then implementation tasks will proceed
+3. The final task runs the verification gate: the two runnable steps, then Docs,
+   Version and the standards retrospective. The spec is not complete until the gate is
+   green, Docs and Version are recorded, AND the standards are either updated (or
+   proposed, for base/) or recorded as "no changes"
 
 Ready to start? (approve / adjust)
 ```
@@ -188,6 +258,7 @@ agent-os/specs/{YYYY-MM-DD-HHMM-feature-slug}/
 ├── shape.md          # Shaping decisions and context
 ├── standards.md      # Which standards apply and key points
 ├── references.md     # Pointers to similar code
+├── verification/     # gate-run.txt, and the negative-test transcripts when a gate file changed
 └── visuals/          # Mockups, screenshots (if any)
 ```
 
@@ -197,6 +268,10 @@ The shape.md file should capture:
 
 ```markdown
 # {Feature Name} — Shaping Notes
+
+## Core Architecture (Non-Negotiable)
+
+None yet; see Step 5a. The toolchain, layout and typing standards will fill this tier.
 
 ## Scope
 
@@ -215,8 +290,50 @@ The shape.md file should capture:
 
 ## Standards Applied
 
-- api/response-format — [why it applies]
-- api/error-handling — [why it applies]
+**Core (always applied):**
+- none yet (Step 5a)
+
+**Feature-specific:**
+- {folder/standard} — [why it applies]
+
+## Verification Gate
+
+Spec is not complete until `scripts/gate.sh` passes — `bash -n` on every file under
+`scripts/` and `scripts/sync-standards.sh --check` against `../patchbay-standards` at the
+commit in `agent-os/standards/base/.version` — and the three judgment steps are recorded,
+in this order: Docs, Version, then the standards retrospective below.
+
+**Results ({date}):** [exit status, branch, `verification/gate-run.txt`; which negative
+tests were rerun if a gate file changed]
+
+**Docs (step 3):** [what documentation was checked and reads true]
+
+**Version (step 4):** [the `[Unreleased]` entry in `CHANGELOG.md`; the version bump, if any]
+
+## Standards Retrospective
+
+Step 5, always last. Per `agent-os/standards/base/process/standards-retrospective.md`. Filled
+in at the END of the spec, from the shipped diff — not at shaping time. "No changes" is valid;
+silence is not.
+
+Either:
+
+`Standards retrospective: no changes.`
+
+Or a list, each entry naming the standard, what the spec taught it, and the shipped file
+that verifies it:
+
+- `{project standard}` — [what changed, and the code that proves it]
+- `agent-os/standards/index.yml` — [updated for the above, in this repository's own sections;
+  the `base:` section is synced and never edited by hand]
+- **Deviation, not a standard change:** [what we did differently and why it stays a one-off]
+
+### Standards retrospective (proposed, base)
+
+Only when the spec taught a base standard something. Proposals, never local edits; each
+becomes a pull request to `patchbay-standards`, approved by a person.
+
+- `base/{folder/standard}.md` — [the change, and the shipped code that proves it]
 ```
 
 ## standards.md Content
@@ -226,17 +343,14 @@ Include the full content of each relevant standard:
 ```markdown
 # Standards for {Feature Name}
 
-The following standards apply to this work.
+The following standards apply to this work, as they read when the spec was shaped
+(before the retrospective). If this spec changed or proposed a change to any of them,
+`shape.md`'s Standards Retrospective says which and why — this file is the snapshot, not
+the current text.
 
 ---
 
-## api/response-format
-
-[Full content of the standard file]
-
----
-
-## api/error-handling
+## {folder/standard}
 
 [Full content of the standard file]
 ```
@@ -250,7 +364,7 @@ The following standards apply to this work.
 
 ### {Reference 1 name}
 
-- **Location:** `src/features/comments/`
+- **Location:** `{path}`
 - **Relevance:** [Why this is relevant]
 - **Key patterns:** [What to borrow from this]
 
@@ -263,5 +377,7 @@ The following standards apply to this work.
 
 - **Keep shaping fast** — Don't over-document. Capture enough to start, refine as you build.
 - **Visuals are optional** — Not every feature needs mockups.
-- **Standards guide, not dictate** — They inform the plan but aren't always mandatory.
+- **Feature-specific standards inform the plan** — If the plan conflicts with one, revise the plan, or record in `shape.md` why the standard doesn't apply here. A standard that's simply wrong gets fixed in the retrospective, not worked around — and a base standard gets *proposed*, not edited.
 - **Specs are discoverable** — Months later, someone can find this spec and understand what was built and why.
+- **The gate is the definition of done** — A spec with a script that does not parse, a base standard or index entry that drifted from the pinned commit, a doc that reads false, a missing CHANGELOG entry, or an unwritten retrospective is unfinished work, however small the change.
+- **Standards are a living record** — The retrospective in gate step 5 is how they grow. A spec that taught nothing says so in `shape.md`; a spec that taught something changes a project standard (or proposes a base change) in its own change set, verified against the shipped code rather than the plan.

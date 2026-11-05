@@ -1,0 +1,44 @@
+# The verification gate in CI: the same scripts/gate.sh, and nothing else. One job, on every pull
+# request and every push to main; no linter, formatter or check lives here. Rule:
+# agent-os/standards/base/process/verification-gate.md, "CI". Each action is pinned to a commit,
+# its tag beside it; uv is pinned to the version the sibling repository's gate was proven with
+# (no step runs it yet; the toolchain spec's steps will). A pin is bumped deliberately, in the
+# gate's own spec. Caching is off (nothing to key it on), neither checkout keeps a token, and the
+# job times out well above its usual minute.
+#
+# Layout, per agent-os/standards/base/process/standards-sync.md: actions/checkout writes nowhere
+# but the workspace, so this repository is checked out into patchbay/ and patchbay-standards
+# beside it, at main with its whole history, so the commit pinned in
+# agent-os/standards/base/.version is present for the drift check; the gate runs from patchbay/.
+name: gate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: patchbay
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: fromtheoutfit/patchbay-standards
+          ref: main
+          path: patchbay-standards
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.13.7"
+          enable-cache: false
+      - run: scripts/gate.sh
+        working-directory: patchbay
