@@ -109,6 +109,9 @@ and `scripts/sync-standards.sh --check` against `../patchbay-standards` at the c
 `agent-os/standards/base/.version` — and the three judgment steps are recorded, in this order:
 Docs, Version, then the standards retrospective below.
 
+Revised after the review of PR 3 in `agent-os/specs/2026-11-05-1759-gate-revision-after-pr-3-review/`;
+the transcripts here are the first round's.
+
 **Results (2026-11-05):** `scripts/gate.sh` exit 0 on the tree, run as the last act before
 hand-over on branch
 `feature/1-bootstrap-shape-spec-claudemd-gate-with-the-drift-check-ci-readme-changelog`;

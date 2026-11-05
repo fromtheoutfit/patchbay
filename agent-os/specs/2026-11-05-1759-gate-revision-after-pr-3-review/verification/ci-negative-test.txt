@@ -1,0 +1,72 @@
+CI replay (test j of scripts/gate-negative-tests.sh), run 2026-11-05 on branch feature/1-bootstrap-shape-spec-claudemd-gate-with-the-drift-check-ci-readme-changelog, after the last edit to .github/workflows/gate.yml,
+scripts/gate.sh and the harness in the revision after the review of PR 3. The workflow now reads the pinned commit in a run step and
+passes it as the second checkout's ref, and installs no runner. The hosted runs are recorded at the end.
+
+
+### j (CI replay: the run steps of .github/workflows/gate.yml, in order, on a clean copy and on a copy with a broken script)
+The workflow is not run on a hosting service here. The job's steps are read from the workflow file
+and the run steps executed in order under the scratch directory laid out as the workspace (patchbay/
+and patchbay-standards/ side by side, as the two checkout steps leave it), each from the step's
+working-directory under the shell GitHub gives a run step on ubuntu (bash --noprofile --norc -eo
+pipefail), with GITHUB_OUTPUT pointed at a scratch file whose content is printed after a step that
+has an id. GitHub's rule: a step that exits non-zero fails the job unless continue-on-error is set,
+and this job sets nothing. This replays the job's control flow on this machine's toolchain; it is
+not the ubuntu run. The hosted run on the pull request is the proof of the workflow itself,
+recorded by run id and conclusion in the spec's verification/ once it exists. The two uses steps
+are the checkouts, which the scratch layout stands in for; the second takes the pin step's output
+as its ref, and the replay shows the sha the step wrote beside the one in .version.
+-- the commit pinned in the copy's .version:
+b3fc2fe7aa61147ae688f946e2533ae21902713b
+exit=0
+-- j1, clean copy (the job must pass):
+job: gate  runs-on: ubuntu-24.04  timeout-minutes: 10  on: {'push': {'branches': ['main']}, 'pull_request': None}
+step 1: uses actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  with {'path': 'patchbay', 'persist-credentials': False}  (not run here)
+step 2: run echo "sha=$(tr -d '[:space:]' < patchbay/agent-os/standards/base/.version)" >> "$GITHUB_OUTPUT"  (working-directory: .)
+step 2 exit=0
+step 2 (id pin) wrote to GITHUB_OUTPUT: sha=b3fc2fe7aa61147ae688f946e2533ae21902713b
+step 3: uses actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  with {'repository': 'fromtheoutfit/patchbay-standards', 'ref': '${{ steps.pin.outputs.sha }}', 'path': 'patchbay-standards', 'persist-credentials': False}  (not run here)
+step 4: run scripts/gate.sh  (working-directory: patchbay)
+
+== 1/2  bash -n on every shell script under scripts/ (tracked or untracked, not ignored)
+ok   scripts/gate-negative-tests.sh
+ok   scripts/gate.sh
+ok   scripts/sync-standards.sh
+
+== 2/2  scripts/sync-standards.sh --check: agent-os/standards/base/, the base: section and the script match patchbay-standards at the commit in .version (../patchbay-standards)
+check base standards against b3fc2fe7aa61147ae688f946e2533ae21902713b  (<copy patchbay-standards>)
+  index    base: section identical
+  script   scripts/sync-standards.sh matches
+{"mode":"check","upstream":"<copy patchbay-standards>","commit":"b3fc2fe7aa61147ae688f946e2533ae21902713b","missing":[],"extra":[],"changed":[],"index":"identical","script":"matches","ok":true}
+ok   agent-os/standards/base and the base: section of agent-os/standards/index.yml match patchbay-standards at b3fc2fe7aa61147ae688f946e2533ae21902713b
+
+Gate steps 1-2 passed. Steps 3-5 are judgment, recorded in shape.md: Docs, Version, the standards retrospective.
+step 4 exit=0
+job: passed
+exit=0
+-- j2, scripts/broken.sh added as in test a (gate.sh fails at step 1, so the job must fail):
+job: gate  runs-on: ubuntu-24.04  timeout-minutes: 10  on: {'push': {'branches': ['main']}, 'pull_request': None}
+step 1: uses actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  with {'path': 'patchbay', 'persist-credentials': False}  (not run here)
+step 2: run echo "sha=$(tr -d '[:space:]' < patchbay/agent-os/standards/base/.version)" >> "$GITHUB_OUTPUT"  (working-directory: .)
+step 2 exit=0
+step 2 (id pin) wrote to GITHUB_OUTPUT: sha=b3fc2fe7aa61147ae688f946e2533ae21902713b
+step 3: uses actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  with {'repository': 'fromtheoutfit/patchbay-standards', 'ref': '${{ steps.pin.outputs.sha }}', 'path': 'patchbay-standards', 'persist-credentials': False}  (not run here)
+step 4: run scripts/gate.sh  (working-directory: patchbay)
+
+== 1/2  bash -n on every shell script under scripts/ (tracked or untracked, not ignored)
+scripts/broken.sh: line 3: syntax error: unexpected end of file
+FAIL  step 1/2: scripts/broken.sh does not parse
+step 4 exit=1
+job: FAILED at step 4 (a run step that exits non-zero fails the job)
+exit=1
+
+3 runs, 0 unexpected
+
+
+### Hosted runs of the gate workflow on pull request 3
+
+Run 42124784656, workflow "gate", event pull_request, head 6c91362fb2cb63bb29655ef3bac4394000e21d76 on this branch:
+conclusion success (read with gh run view on 2026-11-05). That run proved the workflow as the first
+spec committed it (patchbay-standards checked out at main with full history, setup-uv installed).
+The workflow revised here (the pin step, the checkout at the commit in .version, no setup-uv) is
+proved by the hosted run on the pull request after this revision is pushed; the owner records its
+id and conclusion below.

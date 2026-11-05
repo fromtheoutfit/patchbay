@@ -107,8 +107,9 @@ Standards come in two kinds, and the difference matters here and again in the ga
 
 *Empty for now.* The toolchain, layout and typing standards will fill this tier: the standards that
 apply to every spec in this repository, included without asking, with their full content in
-`standards.md`. Until then, record "none yet; see Step 5a" under a "Core Architecture" heading in
-`shape.md`, so the gap stays visible rather than silently reading as "nothing applies".
+`standards.md`. Until then, record "none yet; see Step 5a" under the
+`## Core Architecture (Non-Negotiable)` heading in `shape.md`, so the gap stays visible rather
+than silently reading as "nothing applies".
 
 #### Step 5b: Feature-Specific Standards
 
@@ -116,7 +117,9 @@ Read `agent-os/standards/index.yml` to identify standards relevant to the featur
 (in addition to the core tier above, once it exists). Its `base:` section is synced and never
 edited by hand; a key there is a path relative to `base/` without the `.md`, so
 `process/verification-gate` is `agent-os/standards/base/process/verification-gate.md`. The
-repository's own sections sit beside it and resolve to `agent-os/standards/<section>/<key>.md`.
+repository's own sections sit beside it and resolve to `agent-os/standards/<section>/<key>.md`,
+except the reserved section `root`, whose keys resolve to `agent-os/standards/<key>.md`: a
+standard directly under the standards folder, in no section folder.
 
 Use AskUserQuestion to confirm:
 
@@ -188,7 +191,8 @@ Create `agent-os/specs/{folder-name}/` with:
 
 Run the full verification gate, in order. The spec is not complete until every step passes:
 
-1. `bash -n` on every file under `scripts/` — every script must parse
+1. `bash -n` on every shell script under `scripts/` as git lists them (tracked or untracked,
+   not ignored) — every one must parse; any other file there fails the step by name
 2. `scripts/sync-standards.sh --check` — `agent-os/standards/base/`, the `base:` section of
    `agent-os/standards/index.yml` and the script itself are byte-identical to `patchbay-standards`
    at the commit in `agent-os/standards/base/.version`, read from the sibling checkout
@@ -226,8 +230,9 @@ After Task 1 is confirmed, continue building out the remaining implementation ta
 
 Each task should be specific and actionable.
 
-**Always include the final verification task** (`scripts/gate.sh` — `bash -n` over `scripts/`,
-`scripts/sync-standards.sh --check` — then Docs, Version and the standards retrospective) as the
+**Always include the final verification task** (`scripts/gate.sh` — `bash -n` over the shell
+scripts git lists under `scripts/`, `scripts/sync-standards.sh --check` — then Docs, Version and
+the standards retrospective) as the
 last task in every plan, regardless of feature size. Do not skip this for "small" changes — a
 one-file fix is exactly the kind of spec that quietly invents a pattern.
 
@@ -298,10 +303,11 @@ None yet; see Step 5a. The toolchain, layout and typing standards will fill this
 
 ## Verification Gate
 
-Spec is not complete until `scripts/gate.sh` passes — `bash -n` on every file under
-`scripts/` and `scripts/sync-standards.sh --check` against `../patchbay-standards` at the
-commit in `agent-os/standards/base/.version` — and the three judgment steps are recorded,
-in this order: Docs, Version, then the standards retrospective below.
+Spec is not complete until `scripts/gate.sh` passes — `bash -n` on every shell script
+under `scripts/` as git lists them, and `scripts/sync-standards.sh --check` against
+`../patchbay-standards` at the commit in `agent-os/standards/base/.version` — and the three
+judgment steps are recorded, in this order: Docs, Version, then the standards retrospective
+below.
 
 **Results ({date}):** [exit status, branch, `verification/gate-run.txt`; which negative
 tests were rerun if a gate file changed]

@@ -32,14 +32,16 @@ scripts/gate.sh
 
 Two runnable steps, in order, stopping at the first failure (exit 1; exit 2 on usage):
 
-1. `bash -n` on every file under `scripts/`.
+1. `bash -n` on every shell script under `scripts/` as git lists them, tracked or untracked and
+   not ignored; a file there that is neither `.sh` nor bash-shebanged fails the step by name.
 2. `scripts/sync-standards.sh --check`: `agent-os/standards/base/`, the `base:` section of
    `agent-os/standards/index.yml` and the sync script itself are byte-identical to
    `patchbay-standards` at the pinned commit.
 
 Step 2 reads the sibling checkout at `../patchbay-standards`, so clone `patchbay-standards` beside
-this repository first; CI checks it out there. The toolchain spec adds ruff, mypy and pytest as
-further steps, pinned in the script. Three judgment steps follow the script and are recorded in
+this repository first; CI checks it out there at the pinned commit. The toolchain spec adds ruff,
+mypy and pytest as further steps, pinned in the script and run through `uvx`, and installs uv in
+CI then. Three judgment steps follow the script and are recorded in
 each spec's `shape.md`: Docs, Version and the standards retrospective. The rule is
 `agent-os/standards/base/process/verification-gate.md`.
 

@@ -47,8 +47,8 @@ prohibition is on attribution markers, not on citing the work.
   `agent-os/standards/` — the base standards synced in from `patchbay-standards` as
   `agent-os/standards/base/`, pinned to the commit in `agent-os/standards/base/.version`, and this
   repository's own beside them. A spec is not complete until its verification gate passes —
-  `scripts/gate.sh`, which runs `bash -n` on every file under `scripts/` and
-  `scripts/sync-standards.sh --check`, holding `agent-os/standards/base/`, the `base:` section of
+  `scripts/gate.sh`, which runs `bash -n` on every shell script under `scripts/` as git lists
+  them (any other file there fails the step) and `scripts/sync-standards.sh --check`, holding `agent-os/standards/base/`, the `base:` section of
   `agent-os/standards/index.yml` and the sync script byte-identical to `patchbay-standards` at the
   pinned commit, read from the sibling checkout `../patchbay-standards` — **then its three
   judgment steps are recorded in `shape.md`, in this order: Docs, Version, and the standards

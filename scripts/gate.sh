@@ -13,8 +13,15 @@
 # "FAIL  step N/M: <reason>" on stderr naming it, whatever status the tool returned, so a
 # failing step 1 is reported before step 2 has a chance to pass; 2 on usage.
 #
-# Step 1 needs bash. Step 2 needs git, cmp, comm, awk and sed, and the sibling checkout of
-# patchbay-standards at ../patchbay-standards holding the commit pinned in
+# Step 1 parses every shell script under scripts/ as git lists them: the tracked files plus the
+# untracked ones git does not ignore (the rule scripts/sync-standards.sh applies to base/), so an
+# ignored stray such as .DS_Store is never seen and a script a spec adds before it is staged is. A
+# file ending in .sh or starting with a bash shebang is parsed; any other file fails the step by
+# name, since only shell scripts live under scripts/; a tracked file missing from the disk, and a
+# tree that is not a git work tree, each fail by name.
+#
+# Step 1 needs bash and git. Step 2 needs git, cmp, comm, awk and sed, and the sibling checkout
+# of patchbay-standards at ../patchbay-standards holding the commit pinned in
 # agent-os/standards/base/.version (agent-os/standards/base/process/standards-sync.md). Nothing
 # is installed to run the gate.
 set -euo pipefail
@@ -33,11 +40,20 @@ fi
 step() { printf '\n== %s\n' "$1"; }
 fail() { printf 'FAIL  step %s: %s\n' "$1" "$2" >&2; exit 1; }   # fail <step> <reason>
 
-step "1/2  bash -n on every file under scripts/"
-while IFS= read -r f; do
+step "1/2  bash -n on every shell script under scripts/ (tracked or untracked, not ignored)"
+git rev-parse --show-toplevel >/dev/null 2>&1 || fail 1/2 "not a git work tree; step 1 lists files with git ls-files"
+n=0
+while IFS= read -r -d '' f; do
+  [ -e "$f" ] || fail 1/2 "$f is tracked but missing from the disk"
+  case "$f" in
+    *.sh) ;;
+    *) head -n 1 "$f" | grep -Eq '^#!.*bash' || fail 1/2 "$f is not a shell script; only shell scripts live under scripts/" ;;
+  esac
   bash -n "$f" || fail 1/2 "$f does not parse"
-  echo "ok   $f"
-done < <(find scripts -type f | LC_ALL=C sort)
+  echo "ok   $f"; n=$((n + 1))
+done < <({ git -c core.quotePath=false ls-files -z -- scripts
+           git -c core.quotePath=false ls-files -z --others --exclude-standard -- scripts; } | LC_ALL=C sort -zu)
+[ "$n" -gt 0 ] || fail 1/2 "git lists no file under scripts/"
 
 step "2/2  scripts/sync-standards.sh --check: agent-os/standards/base/, the base: section and the script match patchbay-standards at the commit in .version (../patchbay-standards)"
 scripts/sync-standards.sh --check ||
