@@ -1,7 +1,7 @@
 [project]
 name = "patchbay-core"
 version = "0.1.0"
-description = "Add your description here"
+description = "Headless control of software instruments from Python: the contracts, host and CLI that patchbay-<instrument> adapters plug into."
 readme = "README.md"
 authors = [
     { name = "Michael Witwicki", email = "michael@theout.fit" }

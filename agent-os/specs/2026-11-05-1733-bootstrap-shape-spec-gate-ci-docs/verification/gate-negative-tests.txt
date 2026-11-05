@@ -1,0 +1,101 @@
+Negative tests of the gate, run 2026-11-05 on branch feature/1-bootstrap-shape-spec-claudemd-gate-with-the-drift-check-ci-readme-changelog by scripts/gate-negative-tests.sh (every test but j), after the last edit
+to scripts/gate.sh, .github/workflows/gate.yml and the harness. Each case lays a scratch copy of the gate's inputs out as <case>/patchbay beside a
+symlink to one scratch clone of ../patchbay-standards, so the sync script's default path resolves as it does in the tree; the pinned commit
+(b3fc2fe) is present in the clone. a to d each fail at the named step with exit 1 and never reach the step after; u shows usage (exit 2) and
+the clean copy passing. j is in ci-negative-test.txt.
+
+
+### a (unparsable script scripts/broken.sh: gate.sh must fail at step 1 naming it, exit 1, and never print 2/2)
+
+== 1/2  bash -n on every file under scripts/
+scripts/broken.sh: line 3: syntax error: unexpected end of file
+FAIL  step 1/2: scripts/broken.sh does not parse
+exit=1
+
+### b (one byte appended to agent-os/standards/base/process/ownership.md: step 1 passes, step 2 must name it changed, exit 1)
+A  .gitignore
+A  agent-os/standards/base/.version
+AM agent-os/standards/base/process/ownership.md
+A  agent-os/standards/base/process/standards-index.md
+A  agent-os/standards/base/process/standards-retrospective.md
+A  agent-os/standards/base/process/standards-sync.md
+A  agent-os/standards/base/process/verification-gate.md
+A  agent-os/standards/index.yml
+A  scripts/gate-negative-tests.sh
+A  scripts/gate.sh
+A  scripts/sync-standards.sh
+exit=0
+
+== 1/2  bash -n on every file under scripts/
+ok   scripts/gate-negative-tests.sh
+ok   scripts/gate.sh
+ok   scripts/sync-standards.sh
+
+== 2/2  scripts/sync-standards.sh --check: agent-os/standards/base/, the base: section and the script match patchbay-standards at the commit in .version (../patchbay-standards)
+check base standards against b3fc2fe7aa61147ae688f946e2533ae21902713b  (<copy patchbay-standards>)
+  changed  process/ownership.md
+  index    base: section identical
+  script   scripts/sync-standards.sh matches
+{"mode":"check","upstream":"<copy patchbay-standards>","commit":"b3fc2fe7aa61147ae688f946e2533ae21902713b","missing":[],"extra":[],"changed":["process/ownership.md"],"index":"identical","script":"matches","ok":false}
+FAIL  drift from patchbay-standards at b3fc2fe7aa61147ae688f946e2533ae21902713b (see above)
+FAIL  step 2/2: drift from patchbay-standards at the pinned commit, or the sibling checkout ../patchbay-standards unusable (see above)
+exit=1
+
+### c (a description in the base: section of agent-os/standards/index.yml hand-edited: step 2 must report the section differs, exit 1)
+ agent-os/standards/index.yml | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=0
+
+== 1/2  bash -n on every file under scripts/
+ok   scripts/gate-negative-tests.sh
+ok   scripts/gate.sh
+ok   scripts/sync-standards.sh
+
+== 2/2  scripts/sync-standards.sh --check: agent-os/standards/base/, the base: section and the script match patchbay-standards at the commit in .version (../patchbay-standards)
+check base standards against b3fc2fe7aa61147ae688f946e2533ae21902713b  (<copy patchbay-standards>)
+  index    base: section differs
+  script   scripts/sync-standards.sh matches
+{"mode":"check","upstream":"<copy patchbay-standards>","commit":"b3fc2fe7aa61147ae688f946e2533ae21902713b","missing":[],"extra":[],"changed":[],"index":"differs","script":"matches","ok":false}
+FAIL  drift from patchbay-standards at b3fc2fe7aa61147ae688f946e2533ae21902713b (see above)
+FAIL  step 2/2: drift from patchbay-standards at the pinned commit, or the sibling checkout ../patchbay-standards unusable (see above)
+exit=1
+
+### d (no checkout at ../patchbay-standards: step 2 must fail naming it, exit 1; the sync script's own status is 2, the gate's is 1)
+-- the sync script alone, for its status:
+FAIL  ../patchbay-standards is not a git checkout; pass the path to a patchbay-standards checkout
+exit=2
+-- the gate:
+
+== 1/2  bash -n on every file under scripts/
+ok   scripts/gate-negative-tests.sh
+ok   scripts/gate.sh
+ok   scripts/sync-standards.sh
+
+== 2/2  scripts/sync-standards.sh --check: agent-os/standards/base/, the base: section and the script match patchbay-standards at the commit in .version (../patchbay-standards)
+FAIL  ../patchbay-standards is not a git checkout; pass the path to a patchbay-standards checkout
+FAIL  step 2/2: drift from patchbay-standards at the pinned commit, or the sibling checkout ../patchbay-standards unusable (see above)
+exit=1
+
+### u (usage: --help and a stray argument each exit 2 with the usage line and run no step; the clean copy exits 0)
+-- clean copy (must pass, exit 0):
+
+== 1/2  bash -n on every file under scripts/
+ok   scripts/gate-negative-tests.sh
+ok   scripts/gate.sh
+ok   scripts/sync-standards.sh
+
+== 2/2  scripts/sync-standards.sh --check: agent-os/standards/base/, the base: section and the script match patchbay-standards at the commit in .version (../patchbay-standards)
+check base standards against b3fc2fe7aa61147ae688f946e2533ae21902713b  (<copy patchbay-standards>)
+  index    base: section identical
+  script   scripts/sync-standards.sh matches
+{"mode":"check","upstream":"<copy patchbay-standards>","commit":"b3fc2fe7aa61147ae688f946e2533ae21902713b","missing":[],"extra":[],"changed":[],"index":"identical","script":"matches","ok":true}
+ok   agent-os/standards/base and the base: section of agent-os/standards/index.yml match patchbay-standards at b3fc2fe7aa61147ae688f946e2533ae21902713b
+
+Gate steps 1-2 passed. Steps 3-5 are judgment, recorded in shape.md: Docs, Version, the standards retrospective.
+exit=0
+-- --help (exit 2):
+usage: scripts/gate.sh   (no arguments; exits 1 at the first failing step, 2 on usage)
+exit=2
+-- a stray argument (exit 2):
+usage: scripts/gate.sh   (no arguments; exits 1 at the first failing step, 2 on usage)
+exit=2
