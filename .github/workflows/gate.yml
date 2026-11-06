@@ -1,15 +1,21 @@
 # The verification gate in CI: the same scripts/gate.sh, and nothing else. One job, on every pull
 # request and every push to main; no linter, formatter or check lives here. Rule:
 # agent-os/standards/base/process/verification-gate.md, "CI". Each action is pinned to a commit,
-# its tag beside it. No runner is installed: no gate step assumes one yet; the toolchain spec adds
-# astral-sh/setup-uv, pinned, when a step first runs a tool through uvx. A pin is bumped
-# deliberately, in the gate's own spec. Caching is off (nothing to key it on), neither checkout
-# keeps a token, and the job times out well above its usual minute.
+# its tag beside it. The runner the script assumes is uv: astral-sh/setup-uv installs the version
+# pyproject.toml pins in [tool.uv] required-version, read from the working directory because no
+# version is given here, so the version is written once (were the lookup ever to fail, setup-uv
+# would install the latest uv and required-version would refuse it: a loud failure, not a drift).
+# `uv sync --locked` installs the locked toolchain into the project's .venv before the gate runs,
+# so the sync that opens the gate's step 2 finds it synced (uv reads .python-version and fetches
+# that interpreter). setup-uv's cache holds uv's download cache between runs, keyed on uv.lock:
+# the same key resolves to the same packages, so it is not a moving part, and a changed lockfile
+# misses it. A pin is bumped deliberately, in the gate's own spec. Neither checkout keeps a token,
+# and the job times out well above its usual two minutes.
 #
 # Layout, per agent-os/standards/base/process/standards-sync.md: actions/checkout writes nowhere
 # but the workspace, so this repository is checked out into patchbay/ and patchbay-standards
 # beside it, at the commit pinned in agent-os/standards/base/.version, which the pin step reads
-# and passes as that checkout's ref; the gate runs from patchbay/.
+# and passes as that checkout's ref; uv and the gate run from patchbay/.
 name: gate
 
 on:
@@ -37,5 +43,12 @@ jobs:
           ref: ${{ steps.pin.outputs.sha }}
           path: patchbay-standards
           persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          working-directory: patchbay
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv sync --locked
+        working-directory: patchbay
       - run: scripts/gate.sh
         working-directory: patchbay

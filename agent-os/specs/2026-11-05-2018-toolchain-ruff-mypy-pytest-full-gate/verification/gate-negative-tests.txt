@@ -1,0 +1,679 @@
+Negative tests of the gate, run 2026-11-05 on branch feature/2-toolchain-setup-pyprojecttoml-as-the-only-config-ruff-mypy-pytest-hypothesis-pre-commit-the-full-gate by scripts/gate-negative-tests.sh (every test but j), after the last edit
+to scripts/gate.sh, scripts/gate-negative-tests.sh, pyproject.toml's [tool.*] sections and .github/workflows/gate.yml in the toolchain
+spec (issue #2). Each case lays a scratch copy of the gate's inputs (scripts/, the standards, pyproject.toml, uv.lock, .python-version,
+README.md, src/, tests/) out as <case>/patchbay beside a symlink to one scratch clone of ../patchbay-standards; a copy that reaches
+step 2 syncs its own .venv from uv's cache. Every run names the status it expects and a mismatch is marked UNEXPECTED; the last line
+counts them. a fails at step 1; h, i, k and l fail at steps 2, 3, 4 and 5 in turn, each tool naming the file and the finding, the
+step after never printed; m shows the rule set is pyproject.toml's (line-length 40 applied, "wide" refused by ruff, a stray [ refused
+by uv); n shows --locked (a pin edited without re-locking fails step 2 with uv naming the lockfile); b to f fail at step 6; g shows
+step 1's file list; u shows usage (exit 2) and the clean copy passing all six steps. j is in ci-negative-test.txt.
+
+
+### a (unparsable script scripts/broken.sh: gate.sh must fail at step 1 naming it, exit 1, and never print 2/6)
+
+== 1/6  bash -n on every shell script under scripts/ (tracked or untracked, not ignored)
+scripts/broken.sh: line 3: syntax error: unexpected end of file
+FAIL  step 1/6: scripts/broken.sh does not parse
+exit=1
+
+### b (one byte appended to agent-os/standards/base/process/ownership.md: steps 1-5 pass, step 6 must name it changed, exit 1)
+A  .gitignore
+A  .python-version
+A  README.md
+A  agent-os/standards/base/.version
+AM agent-os/standards/base/process/ownership.md
+A  agent-os/standards/base/process/standards-index.md
+A  agent-os/standards/base/process/standards-retrospective.md
+A  agent-os/standards/base/process/standards-sync.md
+A  agent-os/standards/base/process/verification-gate.md
+A  agent-os/standards/index.yml
+A  pyproject.toml
+A  scripts/gate-negative-tests.sh
+A  scripts/gate.sh
+A  scripts/sync-standards.sh
+A  src/patchbay/__init__.py
+A  src/patchbay/py.typed
+A  tests/conftest.py
+A  tests/unit/test_version.py
+A  uv.lock
+exit=0
+
+== 1/6  bash -n on every shell script under scripts/ (tracked or untracked, not ignored)
+ok   scripts/gate-negative-tests.sh
+ok   scripts/gate.sh
+ok   scripts/sync-standards.sh
+
+== 2/6  uv run --locked ruff format --check . (the formatter, pinned in pyproject.toml's dev group and uv.lock)
+Using CPython 3.12.16
+Creating virtual environment at: .venv
+   Building patchbay-core @ file://<copy b>/patchbay
+      Built patchbay-core @ file://<copy b>/patchbay
+Installed 25 packages in 32ms
+9 files already formatted
+ok   every file formatted
+
+== 3/6  uv run --locked ruff check . (the linter: [tool.ruff.lint] of pyproject.toml)
+All checks passed!
+ok   no violation
+
+== 4/6  uv run --locked mypy ([tool.mypy] of pyproject.toml: strict, over src/ and tests/)
+Success: no issues found in 3 source files
+ok   no type error
+
+== 5/6  uv run --locked pytest ([tool.pytest.ini_options] of pyproject.toml, over tests/)
+....                                                                     [100%]
+4 passed in 0.96s
+ok   every test passed
+
+== 6/6  scripts/sync-standards.sh --check: agent-os/standards/base/, the base: section and the script match patchbay-standards at the commit in .version (../patchbay-standards)
+check base standards against b3fc2fe7aa61147ae688f946e2533ae21902713b  (<copy patchbay-standards>)
+  changed  process/ownership.md
+  index    base: section identical
+  script   scripts/sync-standards.sh matches
+{"mode":"check","upstream":"<copy patchbay-standards>","commit":"b3fc2fe7aa61147ae688f946e2533ae21902713b","missing":[],"extra":[],"changed":["process/ownership.md"],"index":"identical","script":"matches","ok":false}
+FAIL  drift from patchbay-standards at b3fc2fe7aa61147ae688f946e2533ae21902713b (see above)
+FAIL  step 6/6: drift from patchbay-standards at the pinned commit, or the sibling checkout ../patchbay-standards unusable (see above)
+exit=1
+
+### c (a description in the base: section of agent-os/standards/index.yml hand-edited: step 6 must report the section differs, exit 1)
+ agent-os/standards/index.yml | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=0
+
+== 1/6  bash -n on every shell script under scripts/ (tracked or untracked, not ignored)
+ok   scripts/gate-negative-tests.sh
+ok   scripts/gate.sh
+ok   scripts/sync-standards.sh
+
+== 2/6  uv run --locked ruff format --check . (the formatter, pinned in pyproject.toml's dev group and uv.lock)
+Using CPython 3.12.16
+Creating virtual environment at: .venv
+   Building patchbay-core @ file://<copy c>/patchbay
+      Built patchbay-core @ file://<copy c>/patchbay
+Installed 25 packages in 32ms
+9 files already formatted
+ok   every file formatted
+
+== 3/6  uv run --locked ruff check . (the linter: [tool.ruff.lint] of pyproject.toml)
+All checks passed!
+ok   no violation
+
+== 4/6  uv run --locked mypy ([tool.mypy] of pyproject.toml: strict, over src/ and tests/)
+Success: no issues found in 3 source files
+ok   no type error
+
+== 5/6  uv run --locked pytest ([tool.pytest.ini_options] of pyproject.toml, over tests/)
+....                                                                     [100%]
+4 passed in 0.93s
+ok   every test passed
+
+== 6/6  scripts/sync-standards.sh --check: agent-os/standards/base/, the base: section and the script match patchbay-standards at the commit in .version (../patchbay-standards)
+check base standards against b3fc2fe7aa61147ae688f946e2533ae21902713b  (<copy patchbay-standards>)
+  index    base: section differs
+  script   scripts/sync-standards.sh matches
+{"mode":"check","upstream":"<copy patchbay-standards>","commit":"b3fc2fe7aa61147ae688f946e2533ae21902713b","missing":[],"extra":[],"changed":[],"index":"differs","script":"matches","ok":false}
+FAIL  drift from patchbay-standards at b3fc2fe7aa61147ae688f946e2533ae21902713b (see above)
+FAIL  step 6/6: drift from patchbay-standards at the pinned commit, or the sibling checkout ../patchbay-standards unusable (see above)
+exit=1
+
+### d (no checkout at ../patchbay-standards: step 6 must fail naming it, exit 1; the sync script's own status is 2, the gate's is 1)
+-- the sync script alone, for its status:
+FAIL  ../patchbay-standards is not a git checkout; pass the path to a patchbay-standards checkout
+exit=2
+-- the gate:
+
+== 1/6  bash -n on every shell script under scripts/ (tracked or untracked, not ignored)
+ok   scripts/gate-negative-tests.sh
+ok   scripts/gate.sh
+ok   scripts/sync-standards.sh
+
+== 2/6  uv run --locked ruff format --check . (the formatter, pinned in pyproject.toml's dev group and uv.lock)
+Using CPython 3.12.16
+Creating virtual environment at: .venv
+   Building patchbay-core @ file://<copy d>/patchbay
+      Built patchbay-core @ file://<copy d>/patchbay
+Installed 25 packages in 37ms
+9 files already formatted
+ok   every file formatted
+
+== 3/6  uv run --locked ruff check . (the linter: [tool.ruff.lint] of pyproject.toml)
+All checks passed!
+ok   no violation
+
+== 4/6  uv run --locked mypy ([tool.mypy] of pyproject.toml: strict, over src/ and tests/)
+Success: no issues found in 3 source files
+ok   no type error
+
+== 5/6  uv run --locked pytest ([tool.pytest.ini_options] of pyproject.toml, over tests/)
+....                                                                     [100%]
+4 passed in 0.97s
+ok   every test passed
+
+== 6/6  scripts/sync-standards.sh --check: agent-os/standards/base/, the base: section and the script match patchbay-standards at the commit in .version (../patchbay-standards)
+FAIL  ../patchbay-standards is not a git checkout; pass the path to a patchbay-standards checkout
+FAIL  step 6/6: drift from patchbay-standards at the pinned commit, or the sibling checkout ../patchbay-standards unusable (see above)
+exit=1
+
+### e (a comment appended to the copy's scripts/sync-standards.sh: steps 1-5 pass, step 6 must report the script differs, exit 1)
+A  .gitignore
+A  .python-version
+A  README.md
+A  agent-os/standards/base/.version
+A  agent-os/standards/base/process/ownership.md
+A  agent-os/standards/base/process/standards-index.md
+A  agent-os/standards/base/process/standards-retrospective.md
+A  agent-os/standards/base/process/standards-sync.md
+A  agent-os/standards/base/process/verification-gate.md
+A  agent-os/standards/index.yml
+A  pyproject.toml
+A  scripts/gate-negative-tests.sh
+A  scripts/gate.sh
+AM scripts/sync-standards.sh
+A  src/patchbay/__init__.py
+A  src/patchbay/py.typed
+A  tests/conftest.py
+A  tests/unit/test_version.py
+A  uv.lock
+exit=0
+
+== 1/6  bash -n on every shell script under scripts/ (tracked or untracked, not ignored)
+ok   scripts/gate-negative-tests.sh
+ok   scripts/gate.sh
+ok   scripts/sync-standards.sh
+
+== 2/6  uv run --locked ruff format --check . (the formatter, pinned in pyproject.toml's dev group and uv.lock)
+Using CPython 3.12.16
+Creating virtual environment at: .venv
+   Building patchbay-core @ file://<copy e>/patchbay
+      Built patchbay-core @ file://<copy e>/patchbay
+Installed 25 packages in 28ms
+9 files already formatted
+ok   every file formatted
+
+== 3/6  uv run --locked ruff check . (the linter: [tool.ruff.lint] of pyproject.toml)
+All checks passed!
+ok   no violation
+
+== 4/6  uv run --locked mypy ([tool.mypy] of pyproject.toml: strict, over src/ and tests/)
+Success: no issues found in 3 source files
+ok   no type error
+
+== 5/6  uv run --locked pytest ([tool.pytest.ini_options] of pyproject.toml, over tests/)
+....                                                                     [100%]
+4 passed in 0.95s
+ok   every test passed
+
+== 6/6  scripts/sync-standards.sh --check: agent-os/standards/base/, the base: section and the script match patchbay-standards at the commit in .version (../patchbay-standards)
+check base standards against b3fc2fe7aa61147ae688f946e2533ae21902713b  (<copy patchbay-standards>)
+  index    base: section identical
+  script   scripts/sync-standards.sh differs
+{"mode":"check","upstream":"<copy patchbay-standards>","commit":"b3fc2fe7aa61147ae688f946e2533ae21902713b","missing":[],"extra":[],"changed":[],"index":"identical","script":"differs","ok":false}
+FAIL  drift from patchbay-standards at b3fc2fe7aa61147ae688f946e2533ae21902713b (see above)
+FAIL  step 6/6: drift from patchbay-standards at the pinned commit, or the sibling checkout ../patchbay-standards unusable (see above)
+exit=1
+
+### f (an untracked agent-os/standards/base/process/extra.md: step 6 must name it extra, exit 1)
+A  .gitignore
+A  .python-version
+A  README.md
+A  agent-os/standards/base/.version
+A  agent-os/standards/base/process/ownership.md
+A  agent-os/standards/base/process/standards-index.md
+A  agent-os/standards/base/process/standards-retrospective.md
+A  agent-os/standards/base/process/standards-sync.md
+A  agent-os/standards/base/process/verification-gate.md
+A  agent-os/standards/index.yml
+A  pyproject.toml
+A  scripts/gate-negative-tests.sh
+A  scripts/gate.sh
+A  scripts/sync-standards.sh
+A  src/patchbay/__init__.py
+A  src/patchbay/py.typed
+A  tests/conftest.py
+A  tests/unit/test_version.py
+A  uv.lock
+?? agent-os/standards/base/process/extra.md
+exit=0
+
+== 1/6  bash -n on every shell script under scripts/ (tracked or untracked, not ignored)
+ok   scripts/gate-negative-tests.sh
+ok   scripts/gate.sh
+ok   scripts/sync-standards.sh
+
+== 2/6  uv run --locked ruff format --check . (the formatter, pinned in pyproject.toml's dev group and uv.lock)
+Using CPython 3.12.16
+Creating virtual environment at: .venv
+   Building patchbay-core @ file://<copy f>/patchbay
+      Built patchbay-core @ file://<copy f>/patchbay
+Installed 25 packages in 36ms
+10 files already formatted
+ok   every file formatted
+
+== 3/6  uv run --locked ruff check . (the linter: [tool.ruff.lint] of pyproject.toml)
+All checks passed!
+ok   no violation
+
+== 4/6  uv run --locked mypy ([tool.mypy] of pyproject.toml: strict, over src/ and tests/)
+Success: no issues found in 3 source files
+ok   no type error
+
+== 5/6  uv run --locked pytest ([tool.pytest.ini_options] of pyproject.toml, over tests/)
+....                                                                     [100%]
+4 passed in 0.98s
+ok   every test passed
+
+== 6/6  scripts/sync-standards.sh --check: agent-os/standards/base/, the base: section and the script match patchbay-standards at the commit in .version (../patchbay-standards)
+check base standards against b3fc2fe7aa61147ae688f946e2533ae21902713b  (<copy patchbay-standards>)
+  extra    process/extra.md
+  index    base: section identical
+  script   scripts/sync-standards.sh matches
+{"mode":"check","upstream":"<copy patchbay-standards>","commit":"b3fc2fe7aa61147ae688f946e2533ae21902713b","missing":[],"extra":["process/extra.md"],"changed":[],"index":"identical","script":"matches","ok":false}
+FAIL  drift from patchbay-standards at b3fc2fe7aa61147ae688f946e2533ae21902713b (see above)
+FAIL  step 6/6: drift from patchbay-standards at the pinned commit, or the sibling checkout ../patchbay-standards unusable (see above)
+exit=1
+
+### g (step 1 lists files with git: an ignored scripts/.DS_Store passes; a tracked scripts/notes.txt is refused by name; a tracked script deleted from the disk is refused; a copy that is not a git work tree is refused by name)
+-- untracked, ignored scripts/.DS_Store present (must pass, exit 0):
+A  scripts/gate-negative-tests.sh
+A  scripts/gate.sh
+A  scripts/sync-standards.sh
+!! scripts/.DS_Store
+exit=0
+
+== 1/6  bash -n on every shell script under scripts/ (tracked or untracked, not ignored)
+ok   scripts/gate-negative-tests.sh
+ok   scripts/gate.sh
+ok   scripts/sync-standards.sh
+
+== 2/6  uv run --locked ruff format --check . (the formatter, pinned in pyproject.toml's dev group and uv.lock)
+Using CPython 3.12.16
+Creating virtual environment at: .venv
+   Building patchbay-core @ file://<copy g>/patchbay
+      Built patchbay-core @ file://<copy g>/patchbay
+Installed 25 packages in 31ms
+9 files already formatted
+ok   every file formatted
+
+== 3/6  uv run --locked ruff check . (the linter: [tool.ruff.lint] of pyproject.toml)
+All checks passed!
+ok   no violation
+
+== 4/6  uv run --locked mypy ([tool.mypy] of pyproject.toml: strict, over src/ and tests/)
+Success: no issues found in 3 source files
+ok   no type error
+
+== 5/6  uv run --locked pytest ([tool.pytest.ini_options] of pyproject.toml, over tests/)
+....                                                                     [100%]
+4 passed in 0.96s
+ok   every test passed
+
+== 6/6  scripts/sync-standards.sh --check: agent-os/standards/base/, the base: section and the script match patchbay-standards at the commit in .version (../patchbay-standards)
+check base standards against b3fc2fe7aa61147ae688f946e2533ae21902713b  (<copy patchbay-standards>)
+  index    base: section identical
+  script   scripts/sync-standards.sh matches
+{"mode":"check","upstream":"<copy patchbay-standards>","commit":"b3fc2fe7aa61147ae688f946e2533ae21902713b","missing":[],"extra":[],"changed":[],"index":"identical","script":"matches","ok":true}
+ok   agent-os/standards/base and the base: section of agent-os/standards/index.yml match patchbay-standards at b3fc2fe7aa61147ae688f946e2533ae21902713b
+
+Gate steps 1-6 passed. Steps 7-9 are judgment, recorded in shape.md: Docs, Version, the standards retrospective.
+exit=0
+-- scripts/notes.txt tracked, neither .sh nor a bash shebang (must fail at step 1 naming it, exit 1):
+
+== 1/6  bash -n on every shell script under scripts/ (tracked or untracked, not ignored)
+ok   scripts/gate-negative-tests.sh
+ok   scripts/gate.sh
+FAIL  step 1/6: scripts/notes.txt is not a shell script; only shell scripts live under scripts/
+exit=1
+-- scripts/gate-negative-tests.sh tracked but deleted from the disk, deletion not staged (must fail at step 1 naming it, exit 1):
+AD scripts/gate-negative-tests.sh
+A  scripts/gate.sh
+A  scripts/sync-standards.sh
+exit=0
+
+== 1/6  bash -n on every shell script under scripts/ (tracked or untracked, not ignored)
+FAIL  step 1/6: scripts/gate-negative-tests.sh is tracked but missing from the disk
+exit=1
+-- the copy's .git removed (must fail at step 1 by name, exit 1):
+
+== 1/6  bash -n on every shell script under scripts/ (tracked or untracked, not ignored)
+FAIL  step 1/6: not a git work tree; step 1 lists files with git ls-files
+exit=1
+
+### h (src/patchbay/_broken.py misformatted: step 1 passes, step 2 must name the file, exit 1, and never print 3/6)
+
+== 1/6  bash -n on every shell script under scripts/ (tracked or untracked, not ignored)
+ok   scripts/gate-negative-tests.sh
+ok   scripts/gate.sh
+ok   scripts/sync-standards.sh
+
+== 2/6  uv run --locked ruff format --check . (the formatter, pinned in pyproject.toml's dev group and uv.lock)
+Using CPython 3.12.16
+Creating virtual environment at: .venv
+   Building patchbay-core @ file://<copy h>/patchbay
+      Built patchbay-core @ file://<copy h>/patchbay
+Installed 25 packages in 30ms
+unformatted: File would be reformatted
+ --> src/patchbay/_broken.py:3:3
+  |
+2 |
+  - x  =  1
+3 + x = 1
+  |
+
+1 file would be reformatted, 9 files already formatted
+FAIL  step 2/6: a file is not formatted as ruff format would write it, or uv/ruff could not read pyproject.toml or uv.lock (see above)
+exit=1
+
+### i (src/patchbay/_unused.py formatted but importing os unused: step 2 passes, step 3 must report F401 naming the file, exit 1)
+
+== 1/6  bash -n on every shell script under scripts/ (tracked or untracked, not ignored)
+ok   scripts/gate-negative-tests.sh
+ok   scripts/gate.sh
+ok   scripts/sync-standards.sh
+
+== 2/6  uv run --locked ruff format --check . (the formatter, pinned in pyproject.toml's dev group and uv.lock)
+Using CPython 3.12.16
+Creating virtual environment at: .venv
+   Building patchbay-core @ file://<copy i>/patchbay
+      Built patchbay-core @ file://<copy i>/patchbay
+Installed 25 packages in 31ms
+10 files already formatted
+ok   every file formatted
+
+== 3/6  uv run --locked ruff check . (the linter: [tool.ruff.lint] of pyproject.toml)
+F401 [*] `os` imported but unused
+ --> src/patchbay/_unused.py:3:8
+  |
+1 | """A module with an import nothing uses."""
+2 |
+3 | import os
+  |        ^^
+help: Remove unused import: `os`
+  |
+2 |
+  - import os
+  |
+
+Found 1 error.
+[*] 1 fixable with `--fix`.
+FAIL  step 3/6: ruff check found a violation, or could not read its rule set (see above)
+exit=1
+
+### k (tests/unit/test_broken_types.py returns Any from a function typed -> int: steps 2-3 pass, step 4 must report no-any-return, a check strict turns on, exit 1)
+
+== 1/6  bash -n on every shell script under scripts/ (tracked or untracked, not ignored)
+ok   scripts/gate-negative-tests.sh
+ok   scripts/gate.sh
+ok   scripts/sync-standards.sh
+
+== 2/6  uv run --locked ruff format --check . (the formatter, pinned in pyproject.toml's dev group and uv.lock)
+Using CPython 3.12.16
+Creating virtual environment at: .venv
+   Building patchbay-core @ file://<copy k>/patchbay
+      Built patchbay-core @ file://<copy k>/patchbay
+Installed 25 packages in 60ms
+10 files already formatted
+ok   every file formatted
+
+== 3/6  uv run --locked ruff check . (the linter: [tool.ruff.lint] of pyproject.toml)
+All checks passed!
+ok   no violation
+
+== 4/6  uv run --locked mypy ([tool.mypy] of pyproject.toml: strict, over src/ and tests/)
+tests/unit/test_broken_types.py:8: error: Returning Any from function declared to return "int"  [no-any-return]
+Found 1 error in 1 file (checked 4 source files)
+FAIL  step 4/6: mypy found a type error (see above)
+exit=1
+
+### l (tests/unit/test_broken_assertion.py asserts the version is 9.9.9: steps 2-4 pass, step 5 must report the failure, exit 1, and never print 6/6)
+
+== 1/6  bash -n on every shell script under scripts/ (tracked or untracked, not ignored)
+ok   scripts/gate-negative-tests.sh
+ok   scripts/gate.sh
+ok   scripts/sync-standards.sh
+
+== 2/6  uv run --locked ruff format --check . (the formatter, pinned in pyproject.toml's dev group and uv.lock)
+Using CPython 3.12.16
+Creating virtual environment at: .venv
+   Building patchbay-core @ file://<copy l>/patchbay
+      Built patchbay-core @ file://<copy l>/patchbay
+Installed 25 packages in 48ms
+10 files already formatted
+ok   every file formatted
+
+== 3/6  uv run --locked ruff check . (the linter: [tool.ruff.lint] of pyproject.toml)
+All checks passed!
+ok   no violation
+
+== 4/6  uv run --locked mypy ([tool.mypy] of pyproject.toml: strict, over src/ and tests/)
+Success: no issues found in 4 source files
+ok   no type error
+
+== 5/6  uv run --locked pytest ([tool.pytest.ini_options] of pyproject.toml, over tests/)
+F....                                                                    [100%]
+=================================== FAILURES ===================================
+________________________ test_version_is_something_else ________________________
+
+    def test_version_is_something_else() -> None:
+        """Fails: the version is not 9.9.9."""
+>       assert patchbay.__version__ == "9.9.9"
+E       AssertionError: assert '0.0.1' == '9.9.9'
+E         
+E         - 9.9.9
+E         + 0.0.1
+
+tests/unit/test_broken_assertion.py:8: AssertionError
+=========================== short test summary info ============================
+FAILED tests/unit/test_broken_assertion.py::test_version_is_something_else - ...
+1 failed, 4 passed in 0.97s
+FAIL  step 5/6: a test failed, or pytest could not read its configuration (see above)
+exit=1
+
+### m (the rule set is pyproject.toml's: a changed line-length is applied and fails the clean tree at step 2; a value ruff cannot parse and a file uv cannot parse each fail step 2 by name)
+-- line-length = 100 changed to 40 in the copy's pyproject.toml (the clean tree must now fail step 2, exit 1):
+51:line-length = 40
+
+== 1/6  bash -n on every shell script under scripts/ (tracked or untracked, not ignored)
+ok   scripts/gate-negative-tests.sh
+ok   scripts/gate.sh
+ok   scripts/sync-standards.sh
+
+== 2/6  uv run --locked ruff format --check . (the formatter, pinned in pyproject.toml's dev group and uv.lock)
+Using CPython 3.12.16
+Creating virtual environment at: .venv
+   Building patchbay-core @ file://<copy m>/patchbay
+      Built patchbay-core @ file://<copy m>/patchbay
+Installed 25 packages in 52ms
+unformatted: File would be reformatted
+  --> tests/unit/test_version.py:15:14
+   |
+14 |
+   - _PYPROJECT = Path(__file__).parents[2] / "pyproject.toml"
+15 + _PYPROJECT = (
+16 +     Path(__file__).parents[2]
+17 +     / "pyproject.toml"
+18 + )
+19 |
+20 |
+   - def test_version_matches_pyproject() -> None:
+21 + def test_version_matches_pyproject() -> (
+22 +     None
+23 + ):
+24 |     """__version__ is the [project] version, read from the metadata of the installed package."""
+25 |     with _PYPROJECT.open("rb") as f:
+   -         project = tomllib.load(f)["project"]
+   -     assert patchbay.__version__ == project["version"]
+26 +         project = tomllib.load(f)[
+27 +             "project"
+28 +         ]
+29 +     assert (
+30 +         patchbay.__version__
+31 +         == project["version"]
+32 +     )
+33 |
+34 |
+   - def test_version_is_a_release_segment() -> None:
+35 + def test_version_is_a_release_segment() -> (
+36 +     None
+37 + ):
+38 |     """The version is dotted integers, nothing else."""
+   -     assert _RELEASE.fullmatch(patchbay.__version__)
+39 +     assert _RELEASE.fullmatch(
+40 +         patchbay.__version__
+41 +     )
+42 |
+43 |
+   - @given(st.tuples(st.integers(min_value=0), st.integers(min_value=0), st.integers(min_value=0)))
+   - def test_release_pattern_accepts_every_dotted_triple(parts: tuple[int, int, int]) -> None:
+44 + @given(
+45 +     st.tuples(
+46 +         st.integers(min_value=0),
+47 +         st.integers(min_value=0),
+48 +         st.integers(min_value=0),
+49 +     )
+50 + )
+51 + def test_release_pattern_accepts_every_dotted_triple(
+52 +     parts: tuple[int, int, int],
+53 + ) -> None:
+54 |     """Any major.minor.patch of non-negative integers is a release segment."""
+   -     assert _RELEASE.fullmatch(".".join(str(p) for p in parts))
+55 +     assert _RELEASE.fullmatch(
+56 +         ".".join(str(p) for p in parts)
+57 +     )
+58 |
+59 |
+   - @given(st.text(min_size=1).filter(lambda s: not s.isdigit()))
+   - def test_release_pattern_rejects_a_non_numeric_segment(segment: str) -> None:
+60 + @given(
+61 +     st.text(min_size=1).filter(
+62 +         lambda s: not s.isdigit()
+63 +     )
+64 + )
+65 + def test_release_pattern_rejects_a_non_numeric_segment(
+66 +     segment: str,
+67 + ) -> None:
+68 |     """A segment that is not all digits is not a release segment, alone or after a release."""
+   -     assert not _RELEASE.fullmatch(segment)
+   -     assert not _RELEASE.fullmatch(f"1.0.{segment}")
+69 +     assert not _RELEASE.fullmatch(
+70 +         segment
+71 +     )
+72 +     assert not _RELEASE.fullmatch(
+73 +         f"1.0.{segment}"
+74 +     )
+   |
+
+1 file would be reformatted, 8 files already formatted
+FAIL  step 2/6: a file is not formatted as ruff format would write it, or uv/ruff could not read pyproject.toml or uv.lock (see above)
+exit=1
+-- line-length = "wide" (valid TOML, a value ruff refuses; step 2 must fail, exit 1):
+51:line-length = "wide"
+
+== 1/6  bash -n on every shell script under scripts/ (tracked or untracked, not ignored)
+ok   scripts/gate-negative-tests.sh
+ok   scripts/gate.sh
+ok   scripts/sync-standards.sh
+
+== 2/6  uv run --locked ruff format --check . (the formatter, pinned in pyproject.toml's dev group and uv.lock)
+   Building patchbay-core @ file://<copy m>/patchbay
+      Built patchbay-core @ file://<copy m>/patchbay
+Uninstalled 1 package in 0.48ms
+Installed 1 package in 1ms
+ruff failed
+  Cause: Failed to parse <copy m>/patchbay/pyproject.toml
+  Cause: TOML parse error at line 51, column 15
+   |
+51 | line-length = "wide"
+   |               ^^^^^^
+invalid type: string "wide", expected i64
+
+FAIL  step 2/6: a file is not formatted as ruff format would write it, or uv/ruff could not read pyproject.toml or uv.lock (see above)
+exit=1
+-- the line restored to 100 and a stray [ appended (TOML uv cannot parse; step 2 must fail, exit 1):
+
+== 1/6  bash -n on every shell script under scripts/ (tracked or untracked, not ignored)
+ok   scripts/gate-negative-tests.sh
+ok   scripts/gate.sh
+ok   scripts/sync-standards.sh
+
+== 2/6  uv run --locked ruff format --check . (the formatter, pinned in pyproject.toml's dev group and uv.lock)
+warning: Failed to parse `pyproject.toml` during settings discovery:
+  TOML parse error at line 107, column 2
+      |
+  107 | [
+      |  ^
+  unquoted keys cannot be empty, expected letters, numbers, `-`, `_`
+
+error: Failed to parse: pyproject.toml
+  cause: TOML parse error at line 107, column 2
+             |
+         107 | [
+             |  ^
+         unquoted keys cannot be empty, expected letters, numbers, `-`, `_`
+FAIL  step 2/6: a file is not formatted as ruff format would write it, or uv/ruff could not read pyproject.toml or uv.lock (see above)
+exit=1
+
+### n (ruff==0.17.4 changed to ruff==0.17.3 in the copy's pyproject.toml, uv.lock untouched: step 2 must fail with uv naming the stale lockfile, exit 1)
+37:    "ruff==0.17.3",          # published 2026-11-05; linter and formatter, gate steps 2-3
+
+== 1/6  bash -n on every shell script under scripts/ (tracked or untracked, not ignored)
+ok   scripts/gate-negative-tests.sh
+ok   scripts/gate.sh
+ok   scripts/sync-standards.sh
+
+== 2/6  uv run --locked ruff format --check . (the formatter, pinned in pyproject.toml's dev group and uv.lock)
+Using CPython 3.12.16
+Creating virtual environment at: .venv
+error: The lockfile at `uv.lock` needs to be updated, but `--locked` was provided.
+
+hint: To update the lockfile, run `uv lock`.
+FAIL  step 2/6: a file is not formatted as ruff format would write it, or uv/ruff could not read pyproject.toml or uv.lock (see above)
+exit=1
+
+### u (usage: --help and a stray argument each exit 2 with the usage line and run no step; the clean copy exits 0)
+-- clean copy (must pass, exit 0):
+
+== 1/6  bash -n on every shell script under scripts/ (tracked or untracked, not ignored)
+ok   scripts/gate-negative-tests.sh
+ok   scripts/gate.sh
+ok   scripts/sync-standards.sh
+
+== 2/6  uv run --locked ruff format --check . (the formatter, pinned in pyproject.toml's dev group and uv.lock)
+Using CPython 3.12.16
+Creating virtual environment at: .venv
+   Building patchbay-core @ file://<copy u>/patchbay
+      Built patchbay-core @ file://<copy u>/patchbay
+Installed 25 packages in 28ms
+9 files already formatted
+ok   every file formatted
+
+== 3/6  uv run --locked ruff check . (the linter: [tool.ruff.lint] of pyproject.toml)
+All checks passed!
+ok   no violation
+
+== 4/6  uv run --locked mypy ([tool.mypy] of pyproject.toml: strict, over src/ and tests/)
+Success: no issues found in 3 source files
+ok   no type error
+
+== 5/6  uv run --locked pytest ([tool.pytest.ini_options] of pyproject.toml, over tests/)
+....                                                                     [100%]
+4 passed in 0.97s
+ok   every test passed
+
+== 6/6  scripts/sync-standards.sh --check: agent-os/standards/base/, the base: section and the script match patchbay-standards at the commit in .version (../patchbay-standards)
+check base standards against b3fc2fe7aa61147ae688f946e2533ae21902713b  (<copy patchbay-standards>)
+  index    base: section identical
+  script   scripts/sync-standards.sh matches
+{"mode":"check","upstream":"<copy patchbay-standards>","commit":"b3fc2fe7aa61147ae688f946e2533ae21902713b","missing":[],"extra":[],"changed":[],"index":"identical","script":"matches","ok":true}
+ok   agent-os/standards/base and the base: section of agent-os/standards/index.yml match patchbay-standards at b3fc2fe7aa61147ae688f946e2533ae21902713b
+
+Gate steps 1-6 passed. Steps 7-9 are judgment, recorded in shape.md: Docs, Version, the standards retrospective.
+exit=0
+-- --help (exit 2):
+usage: scripts/gate.sh   (no arguments; exits 1 at the first failing step, 2 on usage)
+exit=2
+-- a stray argument (exit 2):
+usage: scripts/gate.sh   (no arguments; exits 1 at the first failing step, 2 on usage)
+exit=2
+
+28 runs, 0 unexpected
+harness exit=0
