@@ -1,4 +1,4 @@
-Gate run 2026-11-06 on branch feature/5-gate-spec-2-take-patchbay-standards-pr-11s-gate-skeleton-and-harness-changes, the last act before hand-over of the gate spec of issues #5, #6 and #7.
+Gate run 2026-11-06 on branch feature/5-gate-spec-2-take-patchbay-standards-pr-11s-gate-skeleton-and-harness-changes, the last act before hand-over of the gate spec of issues #5, #6 and #7, rerun after the owner's fifth retrospective proposal was added to shape.md.
 
 $ scripts/gate.sh
 
@@ -8,7 +8,7 @@ ok   scripts/gate.sh
 ok   scripts/sync-standards.sh
 
 == 2/6  uv sync --locked, then uv run --locked ruff format --check . (the locked toolchain; the formatter, which reads .gitignore)
-Resolved 26 packages in 14ms
+Resolved 26 packages in 13ms
 Checked 25 packages in 3ms
 ok   the locked toolchain synced
 39 files already formatted
@@ -24,7 +24,7 @@ ok   no type error
 
 == 5/6  uv run --locked pytest ([tool.pytest.ini_options] of pyproject.toml, over tests/, each path git ignores there passed as --ignore)
 ......                                                                   [100%]
-6 passed in 0.13s
+6 passed in 0.12s
 ok   every test passed
 
 == 6/6  scripts/sync-standards.sh --check: agent-os/standards/base/, the base: section and the script match patchbay-standards at the commit in .version (../patchbay-standards)

@@ -213,13 +213,17 @@ follow "Base proposals go to the owner, then upstream".
      - the mutations file is #17 proposal 2.
 
      None is proposed again.
-2. *A standard wrong or stale?* Three, all base, all proposals.
+2. *A standard wrong or stale?* Four, all base, all proposals.
    - The listing rule's second form does not read what git lists when a tracked file is matched by
      `.gitignore` (probes 1–2, test p). The owner's call: refuse that state rather than make the
      tools robust to it (1).
    - The missing-file clause does not say which form it binds (3).
    - `toolchain.md`'s "mypy" and "The gate's tool steps" do not name how steps 4–5 read what git
      lists (4).
+   - `standards-sync.md`'s "What the sync writes, and nothing else" leaves the project's
+     `CHANGELOG.md` out, so the sync to `11ceffd` (`ae58aac`) recorded nothing there, though this
+     repository's `CHANGELOG.md` header said every sync forward gets its own entry; this spec
+     added the line afterwards (5, the owner's, after hand-over).
    - `verification-gate.md`'s "A key the tool does not know is not refused" is wrong of pytest
      under `--strict-config` (probe 5). It is already #17 proposal 3, so it is not proposed again.
 3. *A deliberate deviation?*
@@ -247,6 +251,11 @@ with "None of these", then 4 with "None of these". All four were approved and fi
 fromtheoutfit/patchbay-standards#20, titled a gate spec since proposal 1 needs a gate file changed,
 as the issue says. No AI attribution.
 
+Proposal 5 was the owner's, added on 2026-11-06 after the spec was handed over, with the
+instruction to file it; the ask is its approval. It was filed as a comment on
+fromtheoutfit/patchbay-standards#20, no AI attribution, which names it a gate-file proposal too:
+the sync's output is `scripts/sync-standards.sh`'s, a gate file in every project.
+
 - `base/process/verification-gate.md` — "One script", the listing rule: a tracked file that
   `.gitignore` matches fails the listing step by name (`git ls-files -ci --exclude-standard`
   listing anything). Verified against `verification/probes.txt` sections 1–2, test p's
@@ -267,3 +276,11 @@ as the issue says. No AI attribution.
   mypy's key, pytest's `--ignore`). Verified against `pyproject.toml` `[tool.mypy]`,
   `scripts/gate.sh` steps 4–5, tests p and q, and `verification/probes.txt` sections 2–3.
   Proposed, not applied; filed as fromtheoutfit/patchbay-standards#20.
+- `base/process/standards-sync.md` — "What the sync writes, and nothing else": the sync also
+  writes an entry under `[Unreleased]` in the project's `CHANGELOG.md` naming the old and the new
+  commit, so a sync forward is recorded by the change that makes it; "Pinned, not tracking", which
+  limits the sync's commit to the synced files, gains `CHANGELOG.md` with it. Verified against
+  this spec's `CHANGELOG.md`: `ae58aac` added no entry though the header asked for one, so this
+  spec added "Base standards synced from `b3fc2fe` to `11ceffd` (`ae58aac`, PR #8)" afterwards and
+  reworded the header to say the next spec writes it. Proposed, not applied; filed as a comment on
+  fromtheoutfit/patchbay-standards#20.
