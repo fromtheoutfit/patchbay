@@ -1,0 +1,422 @@
+Mutations of the gate and the harness, run 2026-11-06 on branch
+feature/5-gate-spec-2-take-patchbay-standards-pr-11s-gate-skeleton-and-harness-changes,
+after the last edit to the gate's files: each guard this spec added to scripts/gate.sh, and the
+only assertion of scripts/gate-negative-tests.sh, is broken in turn on a scratch copy of the tree
+(git's list, beside a symlink to ../patchbay-standards), and the harness cases that cover it run
+there. Each mutation leaves the case's exit status as expected (1 either way), so a status-only
+harness would pass; the reason assertion (M1, M2) and only (M3) mark it UNEXPECTED and the harness
+exits 1. The copy carries no git history, so g's runs of the gate at 92cd215 are skipped there, as
+the harness says. The unmutated runs of the same cases are in gate-negative-tests.txt (0
+unexpected). Paths under the harness's scratch directory are shortened to <scratch>/.
+
+## M1: step 1's root guard reverted to git rev-parse alone (any work tree passes, the outer repository's included)
+$ diff -u scripts/gate.sh (as shipped) scripts/gate.sh (mutated)
+@@ -68,7 +68,7 @@
+ 
+ step "1/6  bash -n on every shell script under scripts/ (tracked or untracked, not ignored)"
+ root=$(pwd -P)
+-top=$(git rev-parse --show-toplevel 2>/dev/null) && [ "$top" = "$root" ] ||
++git rev-parse --show-toplevel >/dev/null 2>&1 ||
+   fail 1/6 "not a git work tree rooted at $root; the gate lists files with git ls-files"
+ n=0
+ while IFS= read -r -d '' f; do
+$ scripts/gate-negative-tests.sh g   (in the mutated copy)
+
+### g (step 1 lists files with git: an ignored scripts/.DS_Store passes; a tracked scripts/notes.txt is refused by name; a tracked script deleted from the disk, and a tracked symlink to nothing, are each refused by name; a copy that is not a git work tree, and the same copy inside another repository's work tree, are each refused by name)
+-- untracked, ignored scripts/.DS_Store present (must pass, exit 0; the gate never lists it):
+A  scripts/gate-negative-tests.sh
+A  scripts/gate.sh
+A  scripts/sync-standards.sh
+!! scripts/.DS_Store
+exit=0
+
+== 1/6  bash -n on every shell script under scripts/ (tracked or untracked, not ignored)
+ok   scripts/gate-negative-tests.sh
+ok   scripts/gate.sh
+ok   scripts/sync-standards.sh
+
+== 2/6  uv sync --locked, then uv run --locked ruff format --check . (the locked toolchain; the formatter, which reads .gitignore)
+Using CPython 3.12.16
+Creating virtual environment at: .venv
+Resolved 26 packages in 2ms
+   Building patchbay-core @ file://<copy g>/patchbay
+      Built patchbay-core @ file://<copy g>/patchbay
+Prepared 1 package in 2ms
+Installed 25 packages in 29ms
+ + ast-serialize==0.13.1
+ + cfgv==3.5.0
+ + distlib==0.4.4
+ + filelock==4.2.9
+ + hypothesis==6.170.14
+ + identify==2.6.20
+ + iniconfig==2.3.1
+ + librt==0.16.0
+ + mypy==2.4.1
+ + mypy-extensions==1.2.0
+ + nodeenv==1.12.0
+ + packaging==26.3
+ + patchbay-core==0.0.1 (from file://<copy g>/patchbay)
+ + pathspec==1.1.1
+ + platformdirs==4.14.5
+ + pluggy==1.7.0
+ + pre-commit==4.7.0
+ + pygments==2.21.0
+ + pytest==9.2.0
+ + python-discovery==1.9.4
+ + pyyaml==6.0.3
+ + ruff==0.17.4
+ + sortedcontainers==2.4.0
+ + typing-extensions==4.16.0
+ + virtualenv==21.15.5
+ok   the locked toolchain synced
+10 files already formatted
+ok   every file formatted
+
+== 3/6  uv run --locked ruff check . (the linter: [tool.ruff.lint] of pyproject.toml; reads .gitignore)
+All checks passed!
+ok   no violation
+
+== 4/6  uv run --locked mypy ([tool.mypy] of pyproject.toml: strict, over src/ and tests/, skipping what .gitignore ignores)
+Success: no issues found in 3 source files
+ok   no type error
+
+== 5/6  uv run --locked pytest ([tool.pytest.ini_options] of pyproject.toml, over tests/, each path git ignores there passed as --ignore)
+......                                                                   [100%]
+6 passed in 0.99s
+ok   every test passed
+
+== 6/6  scripts/sync-standards.sh --check: agent-os/standards/base/, the base: section and the script match patchbay-standards at the commit in .version (../patchbay-standards)
+check base standards against 11ceffdbd088bfb753dc54efa198dcb1ad6af0c9  (<copy patchbay-standards>)
+  index    base: section identical
+  script   scripts/sync-standards.sh matches
+{"mode":"check","upstream":"<copy patchbay-standards>","commit":"11ceffdbd088bfb753dc54efa198dcb1ad6af0c9","missing":[],"extra":[],"changed":[],"index":"identical","script":"matches","ok":true}
+ok   agent-os/standards/base and the base: section of agent-os/standards/index.yml match patchbay-standards at 11ceffdbd088bfb753dc54efa198dcb1ad6af0c9
+
+Gate steps 1-6 passed. Steps 7-9 are judgment, recorded in shape.md: Docs, Version, the standards retrospective.
+exit=0
+-- scripts/notes.txt tracked, neither .sh nor a bash shebang (must fail at step 1 naming it, exit 1, 2/6 never printed):
+
+== 1/6  bash -n on every shell script under scripts/ (tracked or untracked, not ignored)
+ok   scripts/gate-negative-tests.sh
+ok   scripts/gate.sh
+FAIL  step 1/6: scripts/notes.txt is not a shell script; only shell scripts live under scripts/
+exit=1
+-- scripts/gate-negative-tests.sh tracked but deleted from the disk, deletion not staged (must fail at step 1 naming it, exit 1):
+AD scripts/gate-negative-tests.sh
+A  scripts/gate.sh
+A  scripts/sync-standards.sh
+exit=0
+
+== 1/6  bash -n on every shell script under scripts/ (tracked or untracked, not ignored)
+FAIL  step 1/6: scripts/gate-negative-tests.sh is tracked but missing from the disk
+exit=1
+-- scripts/dangling.sh tracked, a symlink to nothing (must fail at step 1 naming it as one, not as missing from the disk, exit 1):
+
+== 1/6  bash -n on every shell script under scripts/ (tracked or untracked, not ignored)
+FAIL  step 1/6: scripts/dangling.sh is a symlink to nothing
+exit=1
+-- commit 92cd215 is not in this repository; its scripts/gate.sh is not shown
+-- the copy's .git removed (must fail at step 1 by name, exit 1):
+
+== 1/6  bash -n on every shell script under scripts/ (tracked or untracked, not ignored)
+FAIL  step 1/6: not a git work tree rooted at <copy g>/patchbay; the gate lists files with git ls-files
+exit=1
+-- the same copy, still without .git, inside another repository's work tree (<copy go>, nothing tracked there): git's work-tree top is the outer repository, not the copy:
+<copy go>
+exit=0
+-- the shipped gate on it (must fail at step 1 by name, exit 1, no file listed against the outer repository):
+
+== 1/6  bash -n on every shell script under scripts/ (tracked or untracked, not ignored)
+ok   scripts/gate-negative-tests.sh
+ok   scripts/gate.sh
+ok   scripts/sync-standards.sh
+
+== 2/6  uv sync --locked, then uv run --locked ruff format --check . (the locked toolchain; the formatter, which reads .gitignore)
+Using CPython 3.12.16
+Creating virtual environment at: .venv
+Resolved 26 packages in 2ms
+   Building patchbay-core @ file://<copy go>/copy/patchbay
+      Built patchbay-core @ file://<copy go>/copy/patchbay
+Prepared 1 package in 3ms
+Installed 25 packages in 39ms
+ + ast-serialize==0.13.1
+ + cfgv==3.5.0
+ + distlib==0.4.4
+ + filelock==4.2.9
+ + hypothesis==6.170.14
+ + identify==2.6.20
+ + iniconfig==2.3.1
+ + librt==0.16.0
+ + mypy==2.4.1
+ + mypy-extensions==1.2.0
+ + nodeenv==1.12.0
+ + packaging==26.3
+ + patchbay-core==0.0.1 (from file://<copy go>/copy/patchbay)
+ + pathspec==1.1.1
+ + platformdirs==4.14.5
+ + pluggy==1.7.0
+ + pre-commit==4.7.0
+ + pygments==2.21.0
+ + pytest==9.2.0
+ + python-discovery==1.9.4
+ + pyyaml==6.0.3
+ + ruff==0.17.4
+ + sortedcontainers==2.4.0
+ + typing-extensions==4.16.0
+ + virtualenv==21.15.5
+ok   the locked toolchain synced
+10 files already formatted
+ok   every file formatted
+
+== 3/6  uv run --locked ruff check . (the linter: [tool.ruff.lint] of pyproject.toml; reads .gitignore)
+All checks passed!
+ok   no violation
+
+== 4/6  uv run --locked mypy ([tool.mypy] of pyproject.toml: strict, over src/ and tests/, skipping what .gitignore ignores)
+Success: no issues found in 3 source files
+ok   no type error
+
+== 5/6  uv run --locked pytest ([tool.pytest.ini_options] of pyproject.toml, over tests/, each path git ignores there passed as --ignore)
+......                                                                   [100%]
+6 passed in 0.53s
+ok   every test passed
+
+== 6/6  scripts/sync-standards.sh --check: agent-os/standards/base/, the base: section and the script match patchbay-standards at the commit in .version (../patchbay-standards)
+FAIL  run from the consuming project's root, the top of its git work tree (here: <copy go>/copy/patchbay)
+FAIL  step 6/6: drift from patchbay-standards at the pinned commit, or the sibling checkout ../patchbay-standards unusable (see above)
+exit=1  UNEXPECTED (the output does not say: FAIL  step 1/6: not a git work tree rooted at <copy go>/copy/patchbay; the gate lists files with git ls-files)
+-- commit 92cd215 is not in this repository; its scripts/gate.sh is not shown
+
+9 runs, 1 unexpected
+harness exit=1
+
+## M2: present's symlink branch removed (a symlink to nothing reported as missing from the disk)
+$ diff -u scripts/gate.sh (as shipped) scripts/gate.sh (mutated)
+@@ -62,7 +62,6 @@
+ fail() { printf 'FAIL  step %s: %s\n' "$1" "$2" >&2; exit 1; }   # fail <step> <reason>
+ listed() { git ls-files -z --cached --others --exclude-standard -- "$@" | LC_ALL=C sort -z; }   # listed <path...>: what git lists, NUL-separated, sorted
+ present() {  # present <step> <path>: fail the step unless the listed path is on the disk
+-  if [ -L "$2" ] && [ ! -e "$2" ]; then fail "$1" "$2 is a symlink to nothing"; fi
+   [ -e "$2" ] || fail "$1" "$2 is tracked but missing from the disk"
+ }
+ 
+$ scripts/gate-negative-tests.sh g   (in the mutated copy)
+
+### g (step 1 lists files with git: an ignored scripts/.DS_Store passes; a tracked scripts/notes.txt is refused by name; a tracked script deleted from the disk, and a tracked symlink to nothing, are each refused by name; a copy that is not a git work tree, and the same copy inside another repository's work tree, are each refused by name)
+-- untracked, ignored scripts/.DS_Store present (must pass, exit 0; the gate never lists it):
+A  scripts/gate-negative-tests.sh
+A  scripts/gate.sh
+A  scripts/sync-standards.sh
+!! scripts/.DS_Store
+exit=0
+
+== 1/6  bash -n on every shell script under scripts/ (tracked or untracked, not ignored)
+ok   scripts/gate-negative-tests.sh
+ok   scripts/gate.sh
+ok   scripts/sync-standards.sh
+
+== 2/6  uv sync --locked, then uv run --locked ruff format --check . (the locked toolchain; the formatter, which reads .gitignore)
+Using CPython 3.12.16
+Creating virtual environment at: .venv
+Resolved 26 packages in 2ms
+   Building patchbay-core @ file://<copy g>/patchbay
+      Built patchbay-core @ file://<copy g>/patchbay
+Prepared 1 package in 2ms
+Installed 25 packages in 28ms
+ + ast-serialize==0.13.1
+ + cfgv==3.5.0
+ + distlib==0.4.4
+ + filelock==4.2.9
+ + hypothesis==6.170.14
+ + identify==2.6.20
+ + iniconfig==2.3.1
+ + librt==0.16.0
+ + mypy==2.4.1
+ + mypy-extensions==1.2.0
+ + nodeenv==1.12.0
+ + packaging==26.3
+ + patchbay-core==0.0.1 (from file://<copy g>/patchbay)
+ + pathspec==1.1.1
+ + platformdirs==4.14.5
+ + pluggy==1.7.0
+ + pre-commit==4.7.0
+ + pygments==2.21.0
+ + pytest==9.2.0
+ + python-discovery==1.9.4
+ + pyyaml==6.0.3
+ + ruff==0.17.4
+ + sortedcontainers==2.4.0
+ + typing-extensions==4.16.0
+ + virtualenv==21.15.5
+ok   the locked toolchain synced
+10 files already formatted
+ok   every file formatted
+
+== 3/6  uv run --locked ruff check . (the linter: [tool.ruff.lint] of pyproject.toml; reads .gitignore)
+All checks passed!
+ok   no violation
+
+== 4/6  uv run --locked mypy ([tool.mypy] of pyproject.toml: strict, over src/ and tests/, skipping what .gitignore ignores)
+Success: no issues found in 3 source files
+ok   no type error
+
+== 5/6  uv run --locked pytest ([tool.pytest.ini_options] of pyproject.toml, over tests/, each path git ignores there passed as --ignore)
+......                                                                   [100%]
+6 passed in 1.00s
+ok   every test passed
+
+== 6/6  scripts/sync-standards.sh --check: agent-os/standards/base/, the base: section and the script match patchbay-standards at the commit in .version (../patchbay-standards)
+check base standards against 11ceffdbd088bfb753dc54efa198dcb1ad6af0c9  (<copy patchbay-standards>)
+  index    base: section identical
+  script   scripts/sync-standards.sh matches
+{"mode":"check","upstream":"<copy patchbay-standards>","commit":"11ceffdbd088bfb753dc54efa198dcb1ad6af0c9","missing":[],"extra":[],"changed":[],"index":"identical","script":"matches","ok":true}
+ok   agent-os/standards/base and the base: section of agent-os/standards/index.yml match patchbay-standards at 11ceffdbd088bfb753dc54efa198dcb1ad6af0c9
+
+Gate steps 1-6 passed. Steps 7-9 are judgment, recorded in shape.md: Docs, Version, the standards retrospective.
+exit=0
+-- scripts/notes.txt tracked, neither .sh nor a bash shebang (must fail at step 1 naming it, exit 1, 2/6 never printed):
+
+== 1/6  bash -n on every shell script under scripts/ (tracked or untracked, not ignored)
+ok   scripts/gate-negative-tests.sh
+ok   scripts/gate.sh
+FAIL  step 1/6: scripts/notes.txt is not a shell script; only shell scripts live under scripts/
+exit=1
+-- scripts/gate-negative-tests.sh tracked but deleted from the disk, deletion not staged (must fail at step 1 naming it, exit 1):
+AD scripts/gate-negative-tests.sh
+A  scripts/gate.sh
+A  scripts/sync-standards.sh
+exit=0
+
+== 1/6  bash -n on every shell script under scripts/ (tracked or untracked, not ignored)
+FAIL  step 1/6: scripts/gate-negative-tests.sh is tracked but missing from the disk
+exit=1
+-- scripts/dangling.sh tracked, a symlink to nothing (must fail at step 1 naming it as one, not as missing from the disk, exit 1):
+
+== 1/6  bash -n on every shell script under scripts/ (tracked or untracked, not ignored)
+FAIL  step 1/6: scripts/dangling.sh is tracked but missing from the disk
+exit=1  UNEXPECTED (the output does not say: FAIL  step 1/6: scripts/dangling.sh is a symlink to nothing)
+-- commit 92cd215 is not in this repository; its scripts/gate.sh is not shown
+-- the copy's .git removed (must fail at step 1 by name, exit 1):
+
+== 1/6  bash -n on every shell script under scripts/ (tracked or untracked, not ignored)
+FAIL  step 1/6: not a git work tree rooted at <copy g>/patchbay; the gate lists files with git ls-files
+exit=1
+-- the same copy, still without .git, inside another repository's work tree (<copy go>, nothing tracked there): git's work-tree top is the outer repository, not the copy:
+<copy go>
+exit=0
+-- the shipped gate on it (must fail at step 1 by name, exit 1, no file listed against the outer repository):
+
+== 1/6  bash -n on every shell script under scripts/ (tracked or untracked, not ignored)
+FAIL  step 1/6: not a git work tree rooted at <copy go>/copy/patchbay; the gate lists files with git ls-files
+exit=1
+-- commit 92cd215 is not in this repository; its scripts/gate.sh is not shown
+
+9 runs, 1 unexpected
+harness exit=1
+
+## M3: test b also appends a byte to process/standards-index.md (step 6 then reports two drifts; the text still matches, only must not)
+$ diff -u scripts/gate-negative-tests.sh (as shipped) scripts/gate-negative-tests.sh (mutated)
+@@ -170,7 +170,7 @@
+    mk a; broken a
+    run a 1 $'scripts/broken.sh: line 3: syntax error: unexpected end of file\nFAIL  step 1/6: scripts/broken.sh does not parse' scripts/gate.sh ;;
+ b) hdr "b (one byte appended to agent-os/standards/base/process/ownership.md: steps 1-5 pass, step 6 must name it changed and nothing else, exit 1)"
+-   mk b; printf 'x' >> "$NEG/b/patchbay/agent-os/standards/base/process/ownership.md" || die "b: append"
++   mk b; printf 'x' >> "$NEG/b/patchbay/agent-os/standards/base/process/ownership.md" || die "b: append"; printf 'x' >> "$NEG/b/patchbay/agent-os/standards/base/process/standards-index.md" || die "b: second append"
+    run b 0 git status --short
+    run b 1 $'ok   every test passed\n  changed  process/ownership.md\nFAIL  drift from patchbay-standards at\n'"$F6" scripts/gate.sh
+    only 'changed  process/ownership.md' 'index    base: section identical' 'script   scripts/sync-standards.sh matches' ;;
+$ scripts/gate-negative-tests.sh b   (in the mutated copy)
+
+### b (one byte appended to agent-os/standards/base/process/ownership.md: steps 1-5 pass, step 6 must name it changed and nothing else, exit 1)
+A  .gitignore
+A  .python-version
+A  LICENSE
+A  README.md
+A  agent-os/standards/base/.version
+AM agent-os/standards/base/process/ownership.md
+AM agent-os/standards/base/process/standards-index.md
+A  agent-os/standards/base/process/standards-retrospective.md
+A  agent-os/standards/base/process/standards-sync.md
+A  agent-os/standards/base/process/verification-gate.md
+A  agent-os/standards/base/python/toolchain.md
+A  agent-os/standards/index.yml
+A  pyproject.toml
+A  scripts/gate-negative-tests.sh
+A  scripts/gate.sh
+A  scripts/sync-standards.sh
+A  src/patchbay/__init__.py
+A  src/patchbay/py.typed
+A  tests/unit/test_package.py
+A  tests/unit/test_version.py
+A  uv.lock
+exit=0
+
+== 1/6  bash -n on every shell script under scripts/ (tracked or untracked, not ignored)
+ok   scripts/gate-negative-tests.sh
+ok   scripts/gate.sh
+ok   scripts/sync-standards.sh
+
+== 2/6  uv sync --locked, then uv run --locked ruff format --check . (the locked toolchain; the formatter, which reads .gitignore)
+Using CPython 3.12.16
+Creating virtual environment at: .venv
+Resolved 26 packages in 2ms
+   Building patchbay-core @ file://<copy b>/patchbay
+      Built patchbay-core @ file://<copy b>/patchbay
+Prepared 1 package in 2ms
+Installed 25 packages in 31ms
+ + ast-serialize==0.13.1
+ + cfgv==3.5.0
+ + distlib==0.4.4
+ + filelock==4.2.9
+ + hypothesis==6.170.14
+ + identify==2.6.20
+ + iniconfig==2.3.1
+ + librt==0.16.0
+ + mypy==2.4.1
+ + mypy-extensions==1.2.0
+ + nodeenv==1.12.0
+ + packaging==26.3
+ + patchbay-core==0.0.1 (from file://<copy b>/patchbay)
+ + pathspec==1.1.1
+ + platformdirs==4.14.5
+ + pluggy==1.7.0
+ + pre-commit==4.7.0
+ + pygments==2.21.0
+ + pytest==9.2.0
+ + python-discovery==1.9.4
+ + pyyaml==6.0.3
+ + ruff==0.17.4
+ + sortedcontainers==2.4.0
+ + typing-extensions==4.16.0
+ + virtualenv==21.15.5
+ok   the locked toolchain synced
+10 files already formatted
+ok   every file formatted
+
+== 3/6  uv run --locked ruff check . (the linter: [tool.ruff.lint] of pyproject.toml; reads .gitignore)
+All checks passed!
+ok   no violation
+
+== 4/6  uv run --locked mypy ([tool.mypy] of pyproject.toml: strict, over src/ and tests/, skipping what .gitignore ignores)
+Success: no issues found in 3 source files
+ok   no type error
+
+== 5/6  uv run --locked pytest ([tool.pytest.ini_options] of pyproject.toml, over tests/, each path git ignores there passed as --ignore)
+......                                                                   [100%]
+6 passed in 1.02s
+ok   every test passed
+
+== 6/6  scripts/sync-standards.sh --check: agent-os/standards/base/, the base: section and the script match patchbay-standards at the commit in .version (../patchbay-standards)
+check base standards against 11ceffdbd088bfb753dc54efa198dcb1ad6af0c9  (<copy patchbay-standards>)
+  changed  process/ownership.md
+  changed  process/standards-index.md
+  index    base: section identical
+  script   scripts/sync-standards.sh matches
+{"mode":"check","upstream":"<copy patchbay-standards>","commit":"11ceffdbd088bfb753dc54efa198dcb1ad6af0c9","missing":[],"extra":[],"changed":["process/ownership.md","process/standards-index.md"],"index":"identical","script":"matches","ok":false}
+FAIL  drift from patchbay-standards at 11ceffdbd088bfb753dc54efa198dcb1ad6af0c9 (see above)
+FAIL  step 6/6: drift from patchbay-standards at the pinned commit, or the sibling checkout ../patchbay-standards unusable (see above)
+exit=1
+only=changed  process/ownership.md; index    base: section identical; script   scripts/sync-standards.sh matches;  UNEXPECTED (listed: changed  process/ownership.md;changed  process/standards-index.md;index    base: section identical;script   scripts/sync-standards.sh matches)
+
+2 runs, 1 unexpected
+harness exit=1

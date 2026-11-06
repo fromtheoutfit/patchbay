@@ -3,8 +3,9 @@
 The decisions already made, in issue #1, and implemented by the toolchain spec (issue #2,
 `agent-os/specs/2026-11-05-2018-toolchain-ruff-mypy-pytest-full-gate/`), whose `shape.md` holds
 each configuration choice as a Decision with its reason. Each is one line here; `pyproject.toml`
-is the configuration, and the standard that names it is written in `patchbay-standards` from that
-code.
+is the configuration, and the standard that names it is
+`agent-os/standards/base/python/toolchain.md`, written in `patchbay-standards` from that code and
+synced in, which every spec here includes (Step 5a of `/agent-os:shape-spec`).
 
 - **uv** manages the project and **`uv_build`** builds it (`pyproject.toml` already says so; the
   lockfile is committed). Tools the gate runs are pinned exactly in `pyproject.toml`'s

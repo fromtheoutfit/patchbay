@@ -1,0 +1,38 @@
+Gate run 2026-11-06 on branch feature/5-gate-spec-2-take-patchbay-standards-pr-11s-gate-skeleton-and-harness-changes, the last act before hand-over of the gate spec of issues #5, #6 and #7.
+
+$ scripts/gate.sh
+
+== 1/6  bash -n on every shell script under scripts/ (tracked or untracked, not ignored)
+ok   scripts/gate-negative-tests.sh
+ok   scripts/gate.sh
+ok   scripts/sync-standards.sh
+
+== 2/6  uv sync --locked, then uv run --locked ruff format --check . (the locked toolchain; the formatter, which reads .gitignore)
+Resolved 26 packages in 14ms
+Checked 25 packages in 3ms
+ok   the locked toolchain synced
+39 files already formatted
+ok   every file formatted
+
+== 3/6  uv run --locked ruff check . (the linter: [tool.ruff.lint] of pyproject.toml; reads .gitignore)
+All checks passed!
+ok   no violation
+
+== 4/6  uv run --locked mypy ([tool.mypy] of pyproject.toml: strict, over src/ and tests/, skipping what .gitignore ignores)
+Success: no issues found in 3 source files
+ok   no type error
+
+== 5/6  uv run --locked pytest ([tool.pytest.ini_options] of pyproject.toml, over tests/, each path git ignores there passed as --ignore)
+......                                                                   [100%]
+6 passed in 0.13s
+ok   every test passed
+
+== 6/6  scripts/sync-standards.sh --check: agent-os/standards/base/, the base: section and the script match patchbay-standards at the commit in .version (../patchbay-standards)
+check base standards against 11ceffdbd088bfb753dc54efa198dcb1ad6af0c9  (/Users/michaelwitwicki/Code/Audio/patchbay-standards)
+  index    base: section identical
+  script   scripts/sync-standards.sh matches
+{"mode":"check","upstream":"/Users/michaelwitwicki/Code/Audio/patchbay-standards","commit":"11ceffdbd088bfb753dc54efa198dcb1ad6af0c9","missing":[],"extra":[],"changed":[],"index":"identical","script":"matches","ok":true}
+ok   agent-os/standards/base and the base: section of agent-os/standards/index.yml match patchbay-standards at 11ceffdbd088bfb753dc54efa198dcb1ad6af0c9
+
+Gate steps 1-6 passed. Steps 7-9 are judgment, recorded in shape.md: Docs, Version, the standards retrospective.
+exit=0

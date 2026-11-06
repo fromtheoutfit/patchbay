@@ -98,23 +98,30 @@ Standards come in two kinds, and the difference matters here and again in the ga
   are owned by `patchbay-standards`, and this repository is a consuming project: **a base standard
   is never edited here**, not during a spec and not in its retrospective. A change the spec would
   make to one is recorded in `shape.md` under `### Standards retrospective (proposed, base)` and
-  becomes a pull request to `patchbay-standards` (the sibling checkout, `../patchbay-standards`),
-  approved by a person; this repository takes it when it next moves its pin.
+  presented to the owner at the end of the spec; an approved one is filed as an issue on
+  `patchbay-standards` (the sibling checkout is `../patchbay-standards`), whose own spec lands it
+  as a pull request, approved by a person; this repository takes it when it next moves its pin.
 - **Project standards**, this repository's own files under `agent-os/standards/` outside `base/`,
   belong to this repository and change in its retrospective.
 
 #### Step 5a: Core Architecture (always included)
 
-*Empty for now.* The toolchain, layout and typing standards will fill this tier: the standards that
-apply to every spec in this repository, included without asking, with their full content in
-`standards.md`. Until then, record "none yet; see Step 5a" under the
-`## Core Architecture (Non-Negotiable)` heading in `shape.md`, so the gap stays visible rather
-than silently reading as "nothing applies".
+The standards that apply to every spec in this repository, included without asking, with their
+full content in `standards.md` and named under the `## Core Architecture (Non-Negotiable)` heading
+in `shape.md`:
+
+- **`base/python/toolchain`** — one tool per job in a uv Python package, `pyproject.toml` the only
+  config file, every tool run through `uv run --locked`, and the order of the gate's tool steps
+  (`agent-os/standards/base/python/toolchain.md`, "In a consuming project").
+
+The layout and typing standards are not written yet; each joins this list after the sync that
+brings it in.
 
 #### Step 5b: Feature-Specific Standards
 
 Read `agent-os/standards/index.yml` to identify standards relevant to the feature being built
-(in addition to the core tier above, once it exists). Its `base:` section is synced and never
+(in addition to the core tier above, which is included already: leave the Step 5a standards out
+of the list, `python/toolchain` among them). Its `base:` section is synced and never
 edited by hand; a key there is a path relative to `base/` without the `.md`, so
 `process/verification-gate` is `agent-os/standards/base/process/verification-gate.md`. The
 repository's own sections sit beside it and resolve to `agent-os/standards/<section>/<key>.md`,
@@ -124,7 +131,7 @@ standard directly under the standards folder, in no section folder.
 Use AskUserQuestion to confirm:
 
 ```
-The core architecture tier (Step 5a) is empty for now; nothing is included without asking.
+The core architecture tier (Step 5a) holds base/python/toolchain, included without asking.
 
 These standards may apply:
 
@@ -192,16 +199,20 @@ Create `agent-os/specs/{folder-name}/` with:
 Run the full verification gate, in order. The spec is not complete until every step passes:
 
 1. `bash -n` on every shell script under `scripts/` as git lists them (tracked or untracked,
-   not ignored) — every one must parse; any other file there fails the step by name
+   not ignored), at a work-tree top that is the repository root — every one must parse; any
+   other file there fails the step by name
 2. `uv sync --locked`, then `uv run --locked ruff format --check .` — the locked toolchain
    syncs, and every file is formatted as ruff format writes it
 3. `uv run --locked ruff check .` — no violation of `[tool.ruff.lint]` in `pyproject.toml`
-4. `uv run --locked mypy` — no type error under `[tool.mypy]` (strict, over `src/` and `tests/`)
-5. `uv run --locked pytest` — every test under `tests/` passes (`[tool.pytest.ini_options]`)
+4. `uv run --locked mypy` — no type error under `[tool.mypy]` (strict, over `src/` and `tests/`,
+   skipping what `.gitignore` ignores)
+5. `uv run --locked pytest` — every test under `tests/` passes (`[tool.pytest.ini_options]`),
+   each path git ignores there passed to pytest as `--ignore`
    — steps 2–5 run the tools pinned in `pyproject.toml`'s `[dependency-groups] dev` as `uv.lock`
    resolves them, under the uv `[tool.uv] required-version` pins; step 2's sync fails, before
    any tool runs, when the lockfile no longer matches `pyproject.toml` or the running uv is not
-   the required one
+   the required one; each reads only the files git lists, ruff and mypy reading `.gitignore`
+   themselves and pytest given what git ignores
 6. `scripts/sync-standards.sh --check` — `agent-os/standards/base/`, the `base:` section of
    `agent-os/standards/index.yml` and the script itself are byte-identical to `patchbay-standards`
    at the commit in `agent-os/standards/base/.version`, read from the sibling checkout
@@ -218,9 +229,19 @@ Run the full verification gate, in order. The spec is not complete until every s
    a base standard. List those edits separately from the feature's when reporting, so they
    can be committed apart from it. If the spec taught nothing, record
    `Standards retrospective: no changes` in `shape.md`. "No changes" is valid; silence is not.
+   Always record `Proposals sent upstream:` in `shape.md`, `none` when the retrospective
+   recorded no base proposal. When it records one, before the spec reports done (the standard's
+   "Base proposals go to the owner, then upstream"): present every proposal to the owner with
+   AskUserQuestion, multi-select, each in one or two sentences with the shipped file and test it
+   is verified against, at most three to a question, each question ending with a "None of
+   these" option, four questions to a call; file the approved ones as one issue with
+   `gh issue create --repo fromtheoutfit/patchbay-standards`, no AI attribution, and write its
+   number beside each; mark each declined one `declined by owner, <date>`. A proposal neither
+   filed nor marked declined fails the gate.
 
-`scripts/gate.sh` runs steps 1–6 as one command. Steps 7–9 are judgment, in that order, recorded
-in `shape.md`; the retrospective is always last.
+`scripts/gate.sh` runs steps 1–6 as one command, exit 1 at the first failing step after a `FAIL`
+line naming it, exit 2 on usage or when it cannot enter the repository root. Steps 7–9 are
+judgment, in that order, recorded in `shape.md`; the retrospective is always last.
 
 If any step fails, fix the underlying issue (do not bypass) and rerun before marking the
 spec complete.
@@ -259,7 +280,8 @@ Plan complete. When you approve and execute:
 3. The final task runs the verification gate: the six runnable steps, then Docs,
    Version and the standards retrospective. The spec is not complete until the gate is
    green, Docs and Version are recorded, AND the standards are either updated (or
-   proposed, for base/) or recorded as "no changes"
+   proposed, for base/, each proposal filed upstream or declined by the owner) or
+   recorded as "no changes"
 
 Ready to start? (approve / adjust)
 ```
@@ -287,7 +309,7 @@ The shape.md file should capture:
 
 ## Core Architecture (Non-Negotiable)
 
-None yet; see Step 5a. The toolchain, layout and typing standards will fill this tier.
+- `base/python/toolchain` — included without asking (Step 5a); its full text in `standards.md`.
 
 ## Scope
 
@@ -307,7 +329,7 @@ None yet; see Step 5a. The toolchain, layout and typing standards will fill this
 ## Standards Applied
 
 **Core (always applied):**
-- none yet (Step 5a)
+- `base/python/toolchain` — Step 5a
 
 **Feature-specific:**
 - {folder/standard} — [why it applies]
@@ -347,12 +369,26 @@ that verifies it:
   the `base:` section is synced and never edited by hand]
 - **Deviation, not a standard change:** [what we did differently and why it stays a one-off]
 
+Either way, then the one line that says where the base proposals went, in one of four forms, a
+declined proposal named by its file and a short name, never by its place in the list:
+
+Proposals sent upstream: none
+Proposals sent upstream: {fromtheoutfit/patchbay-standards#N}
+Proposals sent upstream: {fromtheoutfit/patchbay-standards#N}; declined: {`base/…` (short name)}
+Proposals sent upstream: declined: {`base/…` (short name)}, {…}
+
+(`none` when no proposal was recorded; the issue alone when all were filed; the issue and the
+declined ones when some were declined; the declined ones alone when every one was.)
+
 ### Standards retrospective (proposed, base)
 
-Only when the spec taught a base standard something. Proposals, never local edits; each
-becomes a pull request to `patchbay-standards`, approved by a person.
+Only when the spec taught a base standard something. Proposals, never local edits; each is
+presented to the owner before the spec is done, the approved ones filed as one issue on
+`patchbay-standards`, whose own spec lands them as a pull request, approved by a person.
 
-- `base/{folder/standard}.md` — [the change, and the shipped code that proves it]
+- `base/{folder/standard}.md` — [the change, and the shipped file and test that prove it].
+  Proposed, not applied; filed as {fromtheoutfit/patchbay-standards#N} | declined by owner,
+  {date}.
 ```
 
 ## standards.md Content

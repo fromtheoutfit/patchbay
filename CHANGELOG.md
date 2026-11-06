@@ -5,7 +5,9 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 The base standards under `agent-os/standards/base/` are pinned to the commit in `base/.version`;
-a sync forward is recorded here as its own entry.
+a sync forward is recorded here as its own entry, written by the spec that follows it, since the
+sync's own commit changes nothing but the synced files
+(`agent-os/standards/base/process/standards-sync.md`, "Pinned, not tracking").
 
 ## [Unreleased]
 
@@ -85,6 +87,49 @@ a sync forward is recorded here as its own entry.
   - This file.
 
 ### Changed
+
+- Fifth spec, `agent-os/specs/2026-11-06-1527-gate-skeleton-dev-pins-toolchain-tier/` (issues #5,
+  #6 and #7), the gate's spec after the sync to `11ceffd`: what the base standards now pinned ask
+  of this repository's own gate files, one spec since all three change them.
+  - `scripts/gate.sh` takes the skeleton it shares with `patchbay-standards` at `11ceffd`: the
+    header's exit and listing paragraphs; a `cd` into the repository root that fails with exit 2
+    and a line on stderr; `listed`, one `git ls-files -z` call, and `present`, which names a
+    symlink to nothing as one; step 1's root guard, so a copy nested in another repository's work
+    tree is refused rather than listed against the outer one. Steps 2-5 read only the files git
+    lists: ruff reads `.gitignore`; `[tool.mypy]` gains `exclude_gitignore = true`, its limits in
+    the comment beside it; step 5 gives pytest `--ignore` for each path git ignores under
+    `tests/`. `verification/gate-sh-diff.txt` shows the diff against the sibling's `gate.sh`
+    holding only step lists, pins and paths; `verification/probes.txt` holds the probes of ruff,
+    mypy, pytest and uv the changes rest on.
+  - `scripts/gate-negative-tests.sh` takes the harness shape: every failing run names the lines its
+    output must hold, the gate's `FAIL` line last, and is held to no later step banner; `only`
+    holds step 6's drift report to exactly the lines b, c, e and f name; every setup step ends in
+    `|| die`; the fixture's wording is corrected (a local clone holds the pin whichever ref reaches
+    it); a kept transcript holds one run. New cases: g's tracked symlink to nothing and the copy
+    nested in another repository, with the gate at `92cd215` shown on both; u's failed `cd`; p
+    (steps 2-4 read what git lists, the force-added gap asserted as it stands) and q (step 5).
+    `verification/reason-assertion-mutations.txt`: three mutations, each caught only by the
+    reason or by `only`.
+  - `pyproject.toml`: the header and the dev group's comment name the pins of the tools the gate
+    runs (ruff, mypy, pytest), with what `uv.lock` resolves for them, as gate files, and
+    hypothesis and pre-commit as the package's (#6); the `[tool.uv]` comment says another uv
+    refuses every command that reads the project's settings, not every command (probed); the
+    `--strict-config` comment cites `toolchain.md` instead of a rule the gate standard does not
+    have (#7). `CLAUDE.md`'s list of the gate's files follows.
+  - `.claude/commands/agent-os/shape-spec.md`: Step 5a lists `base/python/toolchain`, included in
+    every spec with its full text (#7); the gate task names step 1's root guard, steps 4-5's
+    listing and the exit statuses, and gains the step that presents base proposals to the owner
+    and files the approved ones upstream, with `Proposals sent upstream:` always recorded; the
+    `shape.md` template follows; a base proposal's route is owner, issue, then pull request.
+  - `agent-os/product/tech-stack.md` cites the toolchain standard; `README.md` and the header of
+    `.pre-commit-config.yaml` run pre-commit through `uv run --locked`; `README.md` and
+    `CLAUDE.md` name the exit statuses, the root guard, the listing, the gate's tool pins and the
+    route a base proposal takes.
+
+- Base standards synced from `b3fc2fe` to `11ceffd` (`ae58aac`, PR #8): `base/python/toolchain.md`
+  is new; `verification-gate.md`, `standards-retrospective.md` and `standards-sync.md` are revised;
+  the `base:` section of `agent-os/standards/index.yml` is regenerated. Recorded here by the spec
+  after it, as the header says; the work the sync asked of this repository is the fifth spec above.
 
 - Fourth spec, `agent-os/specs/2026-11-05-2057-toolchain-revision-after-pr-4-review/`, the gate's
   spec for the revision after the owner's review of PR 4 (eleven findings, each with its
