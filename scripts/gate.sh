@@ -23,19 +23,25 @@
 # Steps 2-5 run the Python toolchain: ruff format --check, ruff check, mypy and pytest, each as
 # `uv run --locked <tool>` from the repository root. Pins: the tools are pinned exactly in the
 # [dependency-groups] dev section of pyproject.toml, each with the date it was published, and
-# resolved in uv.lock; --locked runs what the lockfile says and fails the step when the lockfile
-# no longer matches pyproject.toml, instead of rewriting it, so a pin edited without re-locking is
-# a failure by name and the gate writes nothing but the ignored .venv and caches. The rule set each
-# step reads is the [tool.*] sections of pyproject.toml, named in that file's header; a value ruff
-# or pytest cannot parse fails its step. A pin or a rule is changed deliberately, in the gate's own
-# spec (agent-os/standards/base/process/verification-gate.md), and the gate rerun.
+# resolved in uv.lock; uv itself is pinned by [tool.uv] required-version there. Step 2 opens with
+# `uv sync --locked`, which installs exactly what uv.lock names into .venv (a package the lock does
+# not name is removed, as in CI) and fails the step as the sync, before any tool runs, when the
+# lockfile no longer matches pyproject.toml (it is never rewritten), when uv cannot read either file
+# or build the package from them (a license-files entry with no file, say), or when the running uv
+# is not the required version; so a pin edited without re-locking is a failure by name and the gate
+# writes nothing but the ignored .venv and caches. The tools then run under --locked, a check the
+# sync has already passed. The rule set each step reads is the [tool.*] sections of pyproject.toml,
+# named in that file's header; a value ruff or pytest cannot parse fails its step. A pin or a rule
+# is changed deliberately, in the gate's own spec
+# (agent-os/standards/base/process/verification-gate.md), and the gate rerun.
 #
-# Step 1 needs bash and git. Steps 2-5 need uv on PATH (the one runtime this repository assumes;
-# agent-os/standards/base/process/ownership.md) and, the first time, network access to fetch the
-# locked packages and the interpreter .python-version names into uv's cache. Step 6 needs git,
-# cmp, comm, awk and sed, and the sibling checkout of patchbay-standards at ../patchbay-standards
-# holding the commit pinned in agent-os/standards/base/.version
-# (agent-os/standards/base/process/standards-sync.md). Nothing else is installed to run the gate.
+# Step 1 needs bash and git. Steps 2-5 need uv on PATH at the version [tool.uv] required-version
+# pins (the one runtime this repository assumes; agent-os/standards/base/process/ownership.md)
+# and, the first time, network access to fetch the locked packages and the interpreter
+# .python-version names into uv's cache. Step 6 needs git, cmp, comm, awk and sed, and the sibling
+# checkout of patchbay-standards at ../patchbay-standards holding the commit pinned in
+# agent-os/standards/base/.version (agent-os/standards/base/process/standards-sync.md). Nothing
+# else is installed to run the gate.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -62,10 +68,13 @@ done < <({ git -c core.quotePath=false ls-files -z -- scripts
            git -c core.quotePath=false ls-files -z --others --exclude-standard -- scripts; } | LC_ALL=C sort -zu)
 [ "$n" -gt 0 ] || fail 1/6 "git lists no file under scripts/"
 
-step "2/6  uv run --locked ruff format --check . (the formatter, pinned in pyproject.toml's dev group and uv.lock)"
+step "2/6  uv sync --locked, then uv run --locked ruff format --check . (the locked toolchain; the formatter)"
 command -v uv >/dev/null 2>&1 || fail 2/6 "uv is not on PATH; steps 2-5 run the pinned tools through uv run --locked"
+uv sync --locked ||
+  fail 2/6 "uv could not sync the locked toolchain: uv.lock does not match pyproject.toml, uv could not read them or build the package, or this uv is not the version [tool.uv] requires (see above)"
+echo "ok   the locked toolchain synced"
 uv run --locked ruff format --check . ||
-  fail 2/6 "a file is not formatted as ruff format would write it, or uv/ruff could not read pyproject.toml or uv.lock (see above)"
+  fail 2/6 "a file is not formatted as ruff format would write it, or ruff could not read its settings (see above)"
 echo "ok   every file formatted"
 
 step "3/6  uv run --locked ruff check . (the linter: [tool.ruff.lint] of pyproject.toml)"

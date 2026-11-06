@@ -259,6 +259,9 @@ printed, not run. The hosted run on the pull request is the proof of the workflo
 (setup-uv, the cache, ubuntu); the owner records its id and conclusion at the end of
 `ci-negative-test.txt` after the push.
 
+Revised after the review of PR 4 in `agent-os/specs/2026-11-05-2057-toolchain-revision-after-pr-4-review/`,
+which corrects the `license-files` Decision above; the transcripts here are the first round's.
+
 **Docs (step 7):** `README.md` read against the tree: the layout lists `tests/`,
 `.pre-commit-config.yaml` and what `pyproject.toml` is; Install matches `uv sync` and the dev
 group; the six steps match `scripts/gate.sh`'s banners and `--locked` behaviour; pre-commit

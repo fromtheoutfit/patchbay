@@ -11,14 +11,16 @@ the same thing (`agent-os/product/mission.md`).
 
 - `src/patchbay/`: the package, src layout, typed (`py.typed`). It exports `__version__`, read
   from the installed package's metadata so `pyproject.toml` is the one place the version is
-  written, and nothing else yet.
-- `tests/`: pytest's tree, `conftest.py` and `unit/`; not a package (no `__init__.py`), so one
-  basename per test file across it, which mypy holds.
+  written, and nothing else yet. It is imported installed (`uv sync`): from a bare `src/` on
+  `sys.path` the import fails rather than invent a version.
+- `tests/`: pytest's tree, `unit/` for now, with no `conftest.py` until a fixture is shared; not a
+  package (no `__init__.py`), so one basename per test file across it, which mypy holds.
 - `pyproject.toml`: the one configuration file. `[project]`, `[build-system]` and
   `[dependency-groups]` are the package's; every tool the gate runs is configured under `[tool.*]`
   there and nowhere else, with no `setup.py`, `setup.cfg`, `requirements*.txt`, `tox.ini`,
-  `.flake8`, `mypy.ini`, `pytest.ini` or `.ruff.toml`. The `[tool.*]` sections are the gate's rule
-  set and change only in the gate's own spec. `uv.lock` is the resolution of the pins.
+  `.flake8`, `mypy.ini`, `pytest.ini` or `.ruff.toml`. The `[tool.*]` sections are the gate's (the
+  rule set, and `[tool.uv]`, which pins uv itself) and change only in the gate's own spec.
+  `uv.lock` is the resolution of the pins. The wheel carries `LICENSE` (`license-files`).
 - `.pre-commit-config.yaml`: hook registration only, the one file pre-commit cannot do without;
   it configures no tool.
 - `scripts/`: `gate.sh` (the verification gate), `gate-negative-tests.sh` (the tests that prove
@@ -41,12 +43,13 @@ the same thing (`agent-os/product/mission.md`).
 uv sync
 ```
 
-uv is the one tool this repository assumes (`uv --version` should say 0.13.7, the version CI
-pins). `uv sync` reads `.python-version` (3.12), fetches that interpreter into uv's cache if it is
-not there, creates `.venv/` and installs the locked dev toolchain into it: ruff, mypy, pytest,
-hypothesis and pre-commit, each pinned exactly in `pyproject.toml`'s `[dependency-groups] dev`
-with the date it was published, and resolved in `uv.lock`. Nothing is installed outside the
-repository. Run a tool as `uv run --locked <tool>`, as the gate does.
+uv is the one tool this repository assumes, at 0.13.7: `pyproject.toml`'s `[tool.uv]
+required-version` pins it, so any other uv refuses to run here, and CI's setup-uv reads the same key
+to install it. `uv sync` reads `.python-version` (3.12), fetches that interpreter into uv's cache if
+it is not there, creates `.venv/` and installs the locked dev toolchain into it: ruff, mypy, pytest,
+hypothesis and pre-commit, each pinned exactly in `pyproject.toml`'s `[dependency-groups] dev` with
+the date it was published, and resolved in `uv.lock`. Nothing is installed outside the repository.
+Run a tool as `uv run --locked <tool>`, as the gate does.
 
 ## The gate
 
@@ -58,7 +61,8 @@ Six runnable steps, in order, stopping at the first failure (exit 1; exit 2 on u
 
 1. `bash -n` on every shell script under `scripts/` as git lists them, tracked or untracked and
    not ignored; a file there that is neither `.sh` nor bash-shebanged fails the step by name.
-2. `uv run --locked ruff format --check .`: every file is formatted as ruff format writes it.
+2. `uv sync --locked`, then `uv run --locked ruff format --check .`: the locked toolchain syncs,
+   and every file is formatted as ruff format writes it.
 3. `uv run --locked ruff check .`: no violation of `[tool.ruff.lint]`, which selects every rule and
    ignores only what this tree proved wrong, each with its reason.
 4. `uv run --locked mypy`: no type error under `strict`, over `src/` and `tests/`.
@@ -67,14 +71,16 @@ Six runnable steps, in order, stopping at the first failure (exit 1; exit 2 on u
    `agent-os/standards/index.yml` and the sync script itself are byte-identical to
    `patchbay-standards` at the pinned commit.
 
-Steps 2 to 5 run under `--locked`: the tool is the one `uv.lock` names, and a pin edited in
-`pyproject.toml` without `uv lock` fails the step rather than rewriting the lockfile, so the gate
-writes nothing but the ignored `.venv/` and caches. Step 6 reads the sibling checkout at
-`../patchbay-standards`, so clone `patchbay-standards` beside this repository first; CI checks it
-out there at the pinned commit, installs uv with `astral-sh/setup-uv` pinned to the same 0.13.7,
-runs `uv sync --locked` and then the script. Three judgment steps follow the script and are recorded
-in each spec's `shape.md`: Docs, Version and the standards retrospective. The rule is
-`agent-os/standards/base/process/verification-gate.md`.
+Step 2 opens with `uv sync --locked`, which installs exactly what `uv.lock` names and fails the step
+as the sync, before any tool runs, when a pin was edited in `pyproject.toml` without `uv lock` (the
+lockfile is never rewritten), when uv cannot read either file or build the package from them, or
+when the running uv is not the required one; so the gate writes nothing but the ignored `.venv/` and
+caches. Steps 2 to 5 then run each tool under `--locked`, the one `uv.lock` names. Step 6 reads the
+sibling checkout at `../patchbay-standards`, so clone `patchbay-standards` beside this repository
+first; CI checks it out there at the pinned commit, installs uv with `astral-sh/setup-uv` at the
+version `[tool.uv] required-version` pins, runs `uv sync --locked` and then the script. Three
+judgment steps follow the script and are recorded in each spec's `shape.md`: Docs, Version and the
+standards retrospective. The rule is `agent-os/standards/base/process/verification-gate.md`.
 
 `scripts/gate-negative-tests.sh` runs each failure case on a scratch copy (`all` adds the CI
 replay); its transcripts live in the spec that last changed a gate file.

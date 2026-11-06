@@ -1,0 +1,59 @@
+Wheel license check 2026-11-05 on branch feature/2-toolchain-setup-pyprojecttoml-as-the-only-config-ruff-mypy-pytest-hypothesis-pre-commit-the-full-gate, finding 1 of the review of PR 4.
+
+Each wheel is built with `uv build --wheel` (uv 0.13.7) into a scratch directory outside the
+repository; the listing is `unzip -l` and the METADATA lines are those starting License or Metadata-Version.
+
+### Before: the tree at 92c2ec2 (git archive), license = "MIT" and no license-files
+
+$ uv build --wheel
+Successfully built <scratch>/wb/patchbay_core-0.0.1-py3-none-any.whl
+$ unzip -l <wheel>
+Archive:  <scratch>/wb/patchbay_core-0.0.1-py3-none-any.whl
+  Length      Date    Time    Name
+---------  ---------- -----   ----
+        0  01-01-1980 00:00   patchbay/
+      386  01-01-1980 00:00   patchbay/__init__.py
+        0  01-01-1980 00:00   patchbay/py.typed
+        0  01-01-1980 00:00   patchbay_core-0.0.1.dist-info/
+       80  01-01-1980 00:00   patchbay_core-0.0.1.dist-info/WHEEL
+     6494  01-01-1980 00:00   patchbay_core-0.0.1.dist-info/METADATA
+      371  01-01-1980 00:00   patchbay_core-0.0.1.dist-info/RECORD
+---------                     -------
+     7331                     7 files
+$ unzip -p <wheel> */METADATA | grep "^License\|^Metadata-Version"
+Metadata-Version: 2.4
+License-Expression: MIT
+
+No license file in dist-info: the METADATA names the expression and the MIT text is not shipped.
+
+### After: the working tree, license-files = ["LICENSE"]
+
+$ uv build --wheel
+Successfully built <scratch>/wa/patchbay_core-0.0.1-py3-none-any.whl
+$ unzip -l <wheel>
+Archive:  <scratch>/wa/patchbay_core-0.0.1-py3-none-any.whl
+  Length      Date    Time    Name
+---------  ---------- -----   ----
+        0  01-01-1980 00:00   patchbay/
+      588  01-01-1980 00:00   patchbay/__init__.py
+        0  01-01-1980 00:00   patchbay/py.typed
+        0  01-01-1980 00:00   patchbay_core-0.0.1.dist-info/licenses/
+     1073  01-01-1980 00:00   patchbay_core-0.0.1.dist-info/licenses/LICENSE
+        0  01-01-1980 00:00   patchbay_core-0.0.1.dist-info/
+       80  01-01-1980 00:00   patchbay_core-0.0.1.dist-info/WHEEL
+     7193  01-01-1980 00:00   patchbay_core-0.0.1.dist-info/METADATA
+      474  01-01-1980 00:00   patchbay_core-0.0.1.dist-info/RECORD
+---------                     -------
+     9408                     9 files
+$ unzip -p <wheel> */METADATA | grep "^License\|^Metadata-Version"
+Metadata-Version: 2.4
+License-Expression: MIT
+License-File: LICENSE
+$ unzip -p <wheel> */licenses/LICENSE | cmp - LICENSE
+identical to the repository's LICENSE
+
+dist-info/licenses/LICENSE is shipped, byte-identical to LICENSE, and METADATA names it as License-File.
+tests/unit/test_package.py holds the installed metadata to the same two lines at every gate run.
+$ uv lock --check
+Resolved 26 packages in 2ms
+uv.lock is unchanged: neither license-files nor [tool.uv] required-version is part of the lock.

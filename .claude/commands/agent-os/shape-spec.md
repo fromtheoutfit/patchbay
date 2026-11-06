@@ -97,7 +97,7 @@ Standards come in two kinds, and the difference matters here and again in the ga
   `scripts/sync-standards.sh` and pinned to the commit in `agent-os/standards/base/.version`. They
   are owned by `patchbay-standards`, and this repository is a consuming project: **a base standard
   is never edited here**, not during a spec and not in its retrospective. A change the spec would
-  make to one is recorded in `shape.md` under `## Standards retrospective (proposed, base)` and
+  make to one is recorded in `shape.md` under `### Standards retrospective (proposed, base)` and
   becomes a pull request to `patchbay-standards` (the sibling checkout, `../patchbay-standards`),
   approved by a person; this repository takes it when it next moves its pin.
 - **Project standards**, this repository's own files under `agent-os/standards/` outside `base/`,
@@ -193,12 +193,15 @@ Run the full verification gate, in order. The spec is not complete until every s
 
 1. `bash -n` on every shell script under `scripts/` as git lists them (tracked or untracked,
    not ignored) — every one must parse; any other file there fails the step by name
-2. `uv run --locked ruff format --check .` — every file is formatted as ruff format writes it
+2. `uv sync --locked`, then `uv run --locked ruff format --check .` — the locked toolchain
+   syncs, and every file is formatted as ruff format writes it
 3. `uv run --locked ruff check .` — no violation of `[tool.ruff.lint]` in `pyproject.toml`
 4. `uv run --locked mypy` — no type error under `[tool.mypy]` (strict, over `src/` and `tests/`)
 5. `uv run --locked pytest` — every test under `tests/` passes (`[tool.pytest.ini_options]`)
    — steps 2–5 run the tools pinned in `pyproject.toml`'s `[dependency-groups] dev` as `uv.lock`
-   resolves them; `--locked` fails the step when the lockfile no longer matches `pyproject.toml`
+   resolves them, under the uv `[tool.uv] required-version` pins; step 2's sync fails, before
+   any tool runs, when the lockfile no longer matches `pyproject.toml` or the running uv is not
+   the required one
 6. `scripts/sync-standards.sh --check` — `agent-os/standards/base/`, the `base:` section of
    `agent-os/standards/index.yml` and the script itself are byte-identical to `patchbay-standards`
    at the commit in `agent-os/standards/base/.version`, read from the sibling checkout
@@ -211,7 +214,7 @@ Run the full verification gate, in order. The spec is not complete until every s
 9. **Standards retrospective** — per `agent-os/standards/base/process/standards-retrospective.md`:
    check what this spec taught against the standards, add any pattern it invented,
    correct anything it proved stale, and keep `index.yml` in step — as an edit for a
-   project standard, as a proposal under `## Standards retrospective (proposed, base)` for
+   project standard, as a proposal under `### Standards retrospective (proposed, base)` for
    a base standard. List those edits separately from the feature's when reporting, so they
    can be committed apart from it. If the spec taught nothing, record
    `Standards retrospective: no changes` in `shape.md`. "No changes" is valid; silence is not.
@@ -237,11 +240,12 @@ After Task 1 is confirmed, continue building out the remaining implementation ta
 Each task should be specific and actionable.
 
 **Always include the final verification task** (`scripts/gate.sh` — `bash -n` over the shell
-scripts git lists under `scripts/`, `uv run --locked ruff format --check .`, `uv run --locked ruff
-check .`, `uv run --locked mypy`, `uv run --locked pytest`, `scripts/sync-standards.sh --check` —
-then Docs, Version and the standards retrospective) as the
-last task in every plan, regardless of feature size. Do not skip this for "small" changes — a
-one-file fix is exactly the kind of spec that quietly invents a pattern.
+scripts git lists under `scripts/`, `uv sync --locked` then
+`uv run --locked ruff format --check .`, `uv run --locked ruff check .`, `uv run --locked mypy`,
+`uv run --locked pytest`, `scripts/sync-standards.sh --check` — then Docs, Version and the
+standards retrospective) as the last task in every plan, regardless of feature size. Do not skip
+this for "small" changes — a one-file fix is exactly the kind of spec that quietly invents a
+pattern.
 
 ### Step 9: Ready for Execution
 
@@ -311,12 +315,12 @@ None yet; see Step 5a. The toolchain, layout and typing standards will fill this
 ## Verification Gate
 
 Spec is not complete until `scripts/gate.sh` passes — `bash -n` on every shell script
-under `scripts/` as git lists them; `uv run --locked ruff format --check .`, `uv run --locked
-ruff check .`, `uv run --locked mypy` and `uv run --locked pytest` under `pyproject.toml`'s
-`[tool.*]` rule set and `uv.lock`'s pins; and `scripts/sync-standards.sh --check` against
-`../patchbay-standards` at the commit in `agent-os/standards/base/.version` — and the three
-judgment steps are recorded, in this order: Docs, Version, then the standards retrospective
-below.
+under `scripts/` as git lists them; `uv sync --locked`, then
+`uv run --locked ruff format --check .`, `uv run --locked ruff check .`, `uv run --locked mypy`
+and `uv run --locked pytest` under `pyproject.toml`'s `[tool.*]` rule set and `uv.lock`'s pins;
+and `scripts/sync-standards.sh --check` against `../patchbay-standards` at the commit in
+`agent-os/standards/base/.version` — and the three judgment steps are recorded, in this order:
+Docs, Version, then the standards retrospective below.
 
 **Results ({date}):** [exit status, branch, `verification/gate-run.txt`; which negative
 tests were rerun if a gate file changed]

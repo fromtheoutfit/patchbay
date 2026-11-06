@@ -10,7 +10,8 @@ code.
   lockfile is committed). Tools the gate runs are pinned exactly in `pyproject.toml`'s
   `[dependency-groups] dev`, resolved in `uv.lock`, and run through `uv run --locked`: for a
   package the lockfile is the pin, and mypy and pytest need the project installed, which `uvx`
-  cannot give them (issue #2 corrected issue #1's `uvx`).
+  cannot give them (issue #2 corrected issue #1's `uvx`). uv itself is pinned by `[tool.uv]
+  required-version`, which CI's setup-uv reads too.
 - **Python >= 3.12** (`requires-python`; `.python-version` pins the interpreter).
 - **ruff** for linting and formatting, with `select = ["ALL"]`; every disabled rule is named with
   its reason.

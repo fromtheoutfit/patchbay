@@ -1,24 +1,25 @@
 #!/usr/bin/env bash
 # Negative tests of the verification gate (agent-os/standards/base/process/verification-gate.md,
-# "Every step that can fail is proven to fail"). Not run by scripts/gate.sh; gate step 1 parses
-# this file. Each test lays a scratch copy of the gate's inputs out as <case>/patchbay in a fresh
-# temporary directory (scripts/, the standards, pyproject.toml, uv.lock, .python-version, README.md,
-# src/ and tests/), git-inits and git-adds the copy (the gate and the sync script list files with
-# git and run only at the top of a work tree), puts a patchbay-standards checkout beside it as
-# <case>/patchbay-standards (a symlink to one git clone of ../patchbay-standards made per run,
-# which carries every branch and so the pinned commit), breaks the copy in one way, and must fail
-# with the named reason and exit status, the steps after it never reached; the positive cases
-# beside them must pass. A copy that reaches step 2 syncs its own .venv from uv's cache on the first
-# `uv run --locked`, a second or two per case, and that is the only install a case makes. Every run names the status it expects: a mismatch is marked UNEXPECTED
-# and the harness exits 1 at the end naming the count, so the transcript's last line says whether
-# every case behaved. A setup step that fails stops the harness (exit 2) rather than letting a
-# case fail for the wrong reason. Nothing in the tree and nothing in ../patchbay-standards is
-# written: the scratch directory is refused unless mktemp made it, outside this repository. The
-# transcript of a run is kept in the spec's verification/ folder as gate-negative-tests.txt (every
-# test but j) and ci-negative-test.txt (j, the CI replay).
+# "Every step that can fail is proven to fail"). Not run by scripts/gate.sh; gate step 1 parses this
+# file. Each test lays a scratch copy of the gate's inputs out as <case>/patchbay in a fresh
+# temporary directory (scripts/, the standards, pyproject.toml, uv.lock, .python-version, README.md
+# and LICENSE, which the package build reads, src/ and tests/), git-inits and git-adds the copy (the
+# gate and the sync script list files with git and run only at the top of a work tree), puts a
+# patchbay-standards checkout beside it as <case>/patchbay-standards (a symlink to one git clone of
+# ../patchbay-standards made per run, which carries every branch and so the pinned commit), breaks
+# the copy in one way, and must fail with the named reason and exit status, the steps after it never
+# reached; the positive cases beside them must pass. A copy that reaches step 2 syncs its own .venv
+# from uv's cache in step 2's `uv sync --locked`, a second or two per case, and that is the only
+# install a case makes. Every run names the status it expects: a mismatch is marked UNEXPECTED and
+# the harness exits 1 at the end naming the count, so the transcript's last line says whether every
+# case behaved. A setup step that fails stops the harness (exit 2) rather than letting a case fail
+# for the wrong reason. Nothing in the tree and nothing in ../patchbay-standards is written: the
+# scratch directory is refused unless mktemp made it, outside this repository. The transcript of a
+# run is kept in the spec's verification/ folder as gate-negative-tests.txt (every test but j) and
+# ci-negative-test.txt (j, the CI replay).
 #
 # Usage: scripts/gate-negative-tests.sh [test ...]   (default: every test but j; "all" adds j)
-#   tests: a b c d e f g h i k l m n u j
+#   tests: a b c d e f g h i k l m n o u j
 #   a  an unparsable script under scripts/: gate.sh stops at step 1, exit 1, step 2 never reached
 #   b  one byte appended to a file under agent-os/standards/base/: step 6 names it changed, exit 1
 #   c  a hand-edited entry in the base: section of the index: step 6 reports the section, exit 1
@@ -34,9 +35,11 @@
 #   l  a test asserting the wrong version: steps 2-4 pass, step 5 reports the failure, exit 1
 #   m  the rule set is read from pyproject.toml: line-length lowered to 40 makes the clean tree
 #      fail step 2 (a changed value applied); line-length = "wide" is refused by ruff at step 2;
-#      a stray "[" is refused by uv at step 2, each by name
-#   n  a dev pin edited in pyproject.toml without re-locking: step 2 fails, uv naming the stale
-#      lockfile (--locked proven), exit 1
+#      a stray "[" is refused by step 2's uv sync, each by name
+#   n  a dev pin edited in pyproject.toml without re-locking: step 2's uv sync --locked fails, uv
+#      naming the stale lockfile, with the sync's reason; ruff never runs, exit 1
+#   o  [tool.uv] required-version set to a uv that is not running: step 2's uv sync fails, uv
+#      naming the required and the running version, with the sync's reason, exit 1
 #   u  usage: any argument exits 2 with the usage line; the clean copy exits 0
 #   j  the CI replay: the run steps of .github/workflows/gate.yml on a clean copy and a broken one
 # Needs git and uv (steps 2-5 of the gate run through it; j reads the workflow with pyyaml,
@@ -62,7 +65,7 @@ mk() {  # mk <case>: <case>/patchbay, a copy of the gate's inputs, git-added, wi
   d="$NEG/$1"; rm -rf "$d"; mkdir -p "$d/patchbay/agent-os" || die "mk $1: mkdir"
   cp -R scripts src tests "$d/patchbay/" || die "mk $1: cp scripts src tests"
   cp -R agent-os/standards "$d/patchbay/agent-os/" || die "mk $1: cp standards"
-  cp .gitignore .python-version pyproject.toml uv.lock README.md "$d/patchbay/" || die "mk $1: cp the package files"
+  cp .gitignore .python-version pyproject.toml uv.lock README.md LICENSE "$d/patchbay/" || die "mk $1: cp the package files"
   git -c init.defaultBranch=main -C "$d/patchbay" init -q || die "mk $1: git init"
   git -C "$d/patchbay" add -A || die "mk $1: git add"
   ln -s ../patchbay-standards "$d/patchbay-standards" || die "mk $1: ln"
@@ -79,8 +82,8 @@ note() { printf -- '-- %s\n' "$1"; }
 broken() { printf '#!/usr/bin/env bash\nif true; then\n' > "$NEG/$1/patchbay/scripts/broken.sh" || die "broken $1"; }   # broken <case>: an unparsable script in the copy
 
 tests=("$@")
-[ "${#tests[@]}" -eq 0 ] && tests=(a b c d e f g h i k l m n u)
-[ "${tests[*]}" = all ] && tests=(a b c d e f g h i k l m n u j)
+[ "${#tests[@]}" -eq 0 ] && tests=(a b c d e f g h i k l m n o u)
+[ "${tests[*]}" = all ] && tests=(a b c d e f g h i k l m n o u j)
 
 for t in "${tests[@]}"; do case "$t" in
 a) hdr "a (unparsable script scripts/broken.sh: gate.sh must fail at step 1 naming it, exit 1, and never print 2/6)"
@@ -159,7 +162,7 @@ def test_version_is_something_else() -> None:
     assert patchbay.__version__ == "9.9.9"
 SRC
    run l 1 scripts/gate.sh ;;
-m) hdr "m (the rule set is pyproject.toml's: a changed line-length is applied and fails the clean tree at step 2; a value ruff cannot parse and a file uv cannot parse each fail step 2 by name)"
+m) hdr "m (the rule set is pyproject.toml's: a changed line-length is applied and fails the clean tree at step 2; a value ruff cannot parse fails step 2 by name, and a file uv cannot parse fails step 2's sync by name)"
    mk m
    note "line-length = 100 changed to 40 in the copy's pyproject.toml (the clean tree must now fail step 2, exit 1):"
    sed -i.bak 's/^line-length = 100$/line-length = 40/' "$NEG/m/patchbay/pyproject.toml" || die "m: sed line-length"
@@ -169,15 +172,23 @@ m) hdr "m (the rule set is pyproject.toml's: a changed line-length is applied an
    sed -i.bak 's/^line-length = 40$/line-length = "wide"/' "$NEG/m/patchbay/pyproject.toml" || die "m: sed wide"
    grep -n '^line-length' "$NEG/m/patchbay/pyproject.toml"
    run m 1 scripts/gate.sh
-   note "the line restored to 100 and a stray [ appended (TOML uv cannot parse; step 2 must fail, exit 1):"
+   note "the line restored to 100 and a stray [ appended (TOML uv cannot parse; step 2's sync must fail, exit 1):"
    sed -i.bak 's/^line-length = "wide"$/line-length = 100/' "$NEG/m/patchbay/pyproject.toml" || die "m: sed restore"; rm "$NEG/m/patchbay/pyproject.toml.bak"
    printf '[\n' >> "$NEG/m/patchbay/pyproject.toml" || die "m: append"
    run m 1 scripts/gate.sh ;;
-n) hdr "n (ruff==0.17.4 changed to ruff==0.17.3 in the copy's pyproject.toml, uv.lock untouched: step 2 must fail with uv naming the stale lockfile, exit 1)"
+n) hdr "n (ruff==0.17.4 changed to ruff==0.17.3 in the copy's pyproject.toml, uv.lock untouched: step 2's uv sync --locked must fail with uv naming the stale lockfile and the sync's reason, ruff never run, exit 1)"
    mk n
    sed -i.bak 's/^    "ruff==0.17.4",/    "ruff==0.17.3",/' "$NEG/n/patchbay/pyproject.toml" || die "n: sed pin"; rm "$NEG/n/patchbay/pyproject.toml.bak"
    grep -n '"ruff==' "$NEG/n/patchbay/pyproject.toml"
    run n 1 scripts/gate.sh ;;
+o) hdr "o ([tool.uv] required-version changed to ==0.13.6 in the copy's pyproject.toml, a uv that is not the one running: step 2's uv sync must fail with uv naming both versions and the sync's reason, ruff never run, exit 1, and never print 3/6)"
+   mk o
+   sed -i.bak 's/^required-version = "==0.13.7"$/required-version = "==0.13.6"/' "$NEG/o/patchbay/pyproject.toml" || die "o: sed required-version"; rm "$NEG/o/patchbay/pyproject.toml.bak"
+   grep -qx 'required-version = "==0.13.6"' "$NEG/o/patchbay/pyproject.toml" || die "o: required-version not rewritten"
+   grep -n '^required-version' "$NEG/o/patchbay/pyproject.toml"
+   note "the uv running here:"
+   run o 0 uv --version
+   run o 1 scripts/gate.sh ;;
 u) hdr "u (usage: --help and a stray argument each exit 2 with the usage line and run no step; the clean copy exits 0)"
    mk u
    note "clean copy (must pass, exit 0):"

@@ -4,10 +4,12 @@
 #
 # Two kinds of section. [project], [build-system] and [dependency-groups] are the package's and
 # change in any spec; adding a dependency is a Decision in that spec's shape.md (what it does, why
-# the standard library cannot, its license). The [tool.*] sections are the rule set that gate steps
-# 2-5 of scripts/gate.sh read (ruff format, ruff check, mypy, pytest); they are gate files and
-# change only in the gate's own spec, with a person (agent-os/standards/base/process/
-# verification-gate.md, "Pinned" and "The gate's own files change only in their own spec").
+# the standard library cannot, its license). The [tool.*] sections are the gate's: [tool.uv] pins
+# the uv that gate steps 2-5 of scripts/gate.sh run under, [tool.uv.build-backend] names the module
+# step 2's sync installs, and the rest are the rule set those steps read (ruff format, ruff check,
+# mypy, pytest). They are gate files and change only in the gate's own spec, with a person
+# (agent-os/standards/base/process/verification-gate.md, "Pinned" and "The gate's own files change
+# only in their own spec").
 
 [project]
 name = "patchbay-core"
@@ -15,6 +17,9 @@ version = "0.0.1"
 description = "Headless control of software instruments from Python: the contracts, host and CLI that patchbay-<instrument> adapters plug into."
 readme = "README.md"
 license = "MIT"
+# Stated, not left to a default: uv_build applies no license glob, and without this the wheel
+# carries License-Expression and not the MIT text the license requires to travel with it.
+license-files = ["LICENSE"]
 authors = [
     { name = "Michael Witwicki", email = "michael@theout.fit" }
 ]
@@ -24,6 +29,13 @@ dependencies = []
 [build-system]
 requires = ["uv_build>=0.13.7,<0.14.0"]
 build-backend = "uv_build"
+
+# The uv every uv command in this repository runs under; any other uv refuses to run here, so a
+# local `--locked` run and CI's read uv.lock with the same uv (gate step 2's sync fails by name,
+# negative test o). CI's astral-sh/setup-uv reads this key to choose the uv it installs, so the
+# version is written once. Bumped deliberately, in the gate's own spec, and the gate rerun.
+[tool.uv]
+required-version = "==0.13.7"
 
 [tool.uv.build-backend]
 module-name = "patchbay"

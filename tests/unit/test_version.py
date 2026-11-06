@@ -2,22 +2,26 @@
 
 import re
 import tomllib
-from pathlib import Path
 
-from hypothesis import given
+import pytest
+from hypothesis import example, given
 from hypothesis import strategies as st
 
 import patchbay
 
 # A PEP 440 release segment: dotted non-negative integers. The pattern the version is held to.
-_RELEASE = re.compile(r"\d+(\.\d+)*")
+# [0-9], not \d: \d takes any Unicode decimal digit, such as ARABIC-INDIC DIGIT ONE (U+0661), and
+# a release segment is ASCII digits.
+_RELEASE = re.compile(r"[0-9]+(\.[0-9]+)*")
 
-_PYPROJECT = Path(__file__).parents[2] / "pyproject.toml"
 
+def test_version_matches_pyproject(pytestconfig: pytest.Config) -> None:
+    """__version__ is the [project] version, read from the metadata of the installed package.
 
-def test_version_matches_pyproject() -> None:
-    """__version__ is the [project] version, read from the metadata of the installed package."""
-    with _PYPROJECT.open("rb") as f:
+    pyproject.toml is read from pytest's rootdir, the directory of the file pytest took its own
+    configuration from, so the test reads the tree it runs in wherever this file sits.
+    """
+    with (pytestconfig.rootpath / "pyproject.toml").open("rb") as f:
         project = tomllib.load(f)["project"]
     assert patchbay.__version__ == project["version"]
 
@@ -33,8 +37,9 @@ def test_release_pattern_accepts_every_dotted_triple(parts: tuple[int, int, int]
     assert _RELEASE.fullmatch(".".join(str(p) for p in parts))
 
 
-@given(st.text(min_size=1).filter(lambda s: not s.isdigit()))
+@given(st.text(min_size=1).filter(lambda s: "." not in s and not (s.isascii() and s.isdigit())))
+@example("\u0661\u0660")  # Arabic-Indic ten: decimal digits, not ASCII ones, tried on every run
 def test_release_pattern_rejects_a_non_numeric_segment(segment: str) -> None:
-    """A segment that is not all digits is not a release segment, alone or after a release."""
+    """One segment, no dot, not all ASCII digits, is not a release segment, alone or after one."""
     assert not _RELEASE.fullmatch(segment)
     assert not _RELEASE.fullmatch(f"1.0.{segment}")
