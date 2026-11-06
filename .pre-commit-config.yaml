@@ -1,0 +1,25 @@
+# Hook registration for pre-commit: the one file beside pyproject.toml, because pre-commit cannot
+# read hooks from it. This file configures no tool. ruff's version is uv.lock's (pinned in
+# pyproject.toml's dev group) and its rules are the [tool.ruff] sections there, so the hooks run the
+# same ruff the gate runs, through uv run --locked: one pin, one rule set. The hooks run the
+# auto-fixing linter and then the formatter, as ruff recommends, and only those: never mypy or
+# pytest, which are the gate's (scripts/gate.sh), not a commit's. pre-commit itself is pinned in the
+# dev group. Install the git hook once with `uv run pre-commit install`; `uv run pre-commit run
+# --all-files` runs the hooks without one.
+minimum_pre_commit_version: "4.7.0"
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check --fix (uv run --locked; the gate's ruff and rules)
+        entry: uv run --locked ruff check --fix
+        language: system
+        types_or: [python, pyi]
+        # One uv run at a time: two syncing the same .venv would race.
+        require_serial: true
+      - id: ruff-format
+        name: ruff format (uv run --locked; the gate's ruff and rules)
+        entry: uv run --locked ruff format
+        language: system
+        types_or: [python, pyi]
+        require_serial: true

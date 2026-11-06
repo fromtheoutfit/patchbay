@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# The runnable half of the verification gate: steps 1-2 of the gate every spec in this
-# repository ends with (.claude/commands/agent-os/shape-spec.md, Task N). Steps 3-5 are
+# The runnable half of the verification gate: steps 1-6 of the gate every spec in this
+# repository ends with (.claude/commands/agent-os/shape-spec.md, Task N). Steps 7-9 are
 # judgment, recorded in the spec's shape.md: Docs (the documentation the change touches reads
 # true), Version (the change under [Unreleased] in CHANGELOG.md) and the standards
 # retrospective per agent-os/standards/base/process/standards-retrospective.md; nothing here can
@@ -20,10 +20,22 @@
 # name, since only shell scripts live under scripts/; a tracked file missing from the disk, and a
 # tree that is not a git work tree, each fail by name.
 #
-# Step 1 needs bash and git. Step 2 needs git, cmp, comm, awk and sed, and the sibling checkout
-# of patchbay-standards at ../patchbay-standards holding the commit pinned in
-# agent-os/standards/base/.version (agent-os/standards/base/process/standards-sync.md). Nothing
-# is installed to run the gate.
+# Steps 2-5 run the Python toolchain: ruff format --check, ruff check, mypy and pytest, each as
+# `uv run --locked <tool>` from the repository root. Pins: the tools are pinned exactly in the
+# [dependency-groups] dev section of pyproject.toml, each with the date it was published, and
+# resolved in uv.lock; --locked runs what the lockfile says and fails the step when the lockfile
+# no longer matches pyproject.toml, instead of rewriting it, so a pin edited without re-locking is
+# a failure by name and the gate writes nothing but the ignored .venv and caches. The rule set each
+# step reads is the [tool.*] sections of pyproject.toml, named in that file's header; a value ruff
+# or pytest cannot parse fails its step. A pin or a rule is changed deliberately, in the gate's own
+# spec (agent-os/standards/base/process/verification-gate.md), and the gate rerun.
+#
+# Step 1 needs bash and git. Steps 2-5 need uv on PATH (the one runtime this repository assumes;
+# agent-os/standards/base/process/ownership.md) and, the first time, network access to fetch the
+# locked packages and the interpreter .python-version names into uv's cache. Step 6 needs git,
+# cmp, comm, awk and sed, and the sibling checkout of patchbay-standards at ../patchbay-standards
+# holding the commit pinned in agent-os/standards/base/.version
+# (agent-os/standards/base/process/standards-sync.md). Nothing else is installed to run the gate.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -32,31 +44,44 @@ if [ $# -ne 0 ]; then
   exit 2
 fi
 
-# Pins. None yet: no step runs a pinned tool. The toolchain spec adds ruff, mypy and pytest here,
-# one named variable per tool with the date it was published beside it, each run through uvx
-# without installing it into the project. A pin is bumped deliberately, in the gate's own spec
-# (agent-os/standards/base/process/verification-gate.md), and the gate rerun.
-
 step() { printf '\n== %s\n' "$1"; }
 fail() { printf 'FAIL  step %s: %s\n' "$1" "$2" >&2; exit 1; }   # fail <step> <reason>
 
-step "1/2  bash -n on every shell script under scripts/ (tracked or untracked, not ignored)"
-git rev-parse --show-toplevel >/dev/null 2>&1 || fail 1/2 "not a git work tree; step 1 lists files with git ls-files"
+step "1/6  bash -n on every shell script under scripts/ (tracked or untracked, not ignored)"
+git rev-parse --show-toplevel >/dev/null 2>&1 || fail 1/6 "not a git work tree; step 1 lists files with git ls-files"
 n=0
 while IFS= read -r -d '' f; do
-  [ -e "$f" ] || fail 1/2 "$f is tracked but missing from the disk"
+  [ -e "$f" ] || fail 1/6 "$f is tracked but missing from the disk"
   case "$f" in
     *.sh) ;;
-    *) head -n 1 "$f" | grep -Eq '^#!.*bash' || fail 1/2 "$f is not a shell script; only shell scripts live under scripts/" ;;
+    *) head -n 1 "$f" | grep -Eq '^#!.*bash' || fail 1/6 "$f is not a shell script; only shell scripts live under scripts/" ;;
   esac
-  bash -n "$f" || fail 1/2 "$f does not parse"
+  bash -n "$f" || fail 1/6 "$f does not parse"
   echo "ok   $f"; n=$((n + 1))
 done < <({ git -c core.quotePath=false ls-files -z -- scripts
            git -c core.quotePath=false ls-files -z --others --exclude-standard -- scripts; } | LC_ALL=C sort -zu)
-[ "$n" -gt 0 ] || fail 1/2 "git lists no file under scripts/"
+[ "$n" -gt 0 ] || fail 1/6 "git lists no file under scripts/"
 
-step "2/2  scripts/sync-standards.sh --check: agent-os/standards/base/, the base: section and the script match patchbay-standards at the commit in .version (../patchbay-standards)"
+step "2/6  uv run --locked ruff format --check . (the formatter, pinned in pyproject.toml's dev group and uv.lock)"
+command -v uv >/dev/null 2>&1 || fail 2/6 "uv is not on PATH; steps 2-5 run the pinned tools through uv run --locked"
+uv run --locked ruff format --check . ||
+  fail 2/6 "a file is not formatted as ruff format would write it, or uv/ruff could not read pyproject.toml or uv.lock (see above)"
+echo "ok   every file formatted"
+
+step "3/6  uv run --locked ruff check . (the linter: [tool.ruff.lint] of pyproject.toml)"
+uv run --locked ruff check . || fail 3/6 "ruff check found a violation, or could not read its rule set (see above)"
+echo "ok   no violation"
+
+step "4/6  uv run --locked mypy ([tool.mypy] of pyproject.toml: strict, over src/ and tests/)"
+uv run --locked mypy || fail 4/6 "mypy found a type error (see above)"
+echo "ok   no type error"
+
+step "5/6  uv run --locked pytest ([tool.pytest.ini_options] of pyproject.toml, over tests/)"
+uv run --locked pytest || fail 5/6 "a test failed, or pytest could not read its configuration (see above)"
+echo "ok   every test passed"
+
+step "6/6  scripts/sync-standards.sh --check: agent-os/standards/base/, the base: section and the script match patchbay-standards at the commit in .version (../patchbay-standards)"
 scripts/sync-standards.sh --check ||
-  fail 2/2 "drift from patchbay-standards at the pinned commit, or the sibling checkout ../patchbay-standards unusable (see above)"
+  fail 6/6 "drift from patchbay-standards at the pinned commit, or the sibling checkout ../patchbay-standards unusable (see above)"
 
-printf '\nGate steps 1-2 passed. Steps 3-5 are judgment, recorded in shape.md: Docs, Version, the standards retrospective.\n'
+printf '\nGate steps 1-6 passed. Steps 7-9 are judgment, recorded in shape.md: Docs, Version, the standards retrospective.\n'

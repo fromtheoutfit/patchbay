@@ -47,16 +47,20 @@ prohibition is on attribution markers, not on citing the work.
   `agent-os/standards/` — the base standards synced in from `patchbay-standards` as
   `agent-os/standards/base/`, pinned to the commit in `agent-os/standards/base/.version`, and this
   repository's own beside them. A spec is not complete until its verification gate passes —
-  `scripts/gate.sh`, which runs `bash -n` on every shell script under `scripts/` as git lists
-  them (any other file there fails the step) and `scripts/sync-standards.sh --check`, holding `agent-os/standards/base/`, the `base:` section of
-  `agent-os/standards/index.yml` and the sync script byte-identical to `patchbay-standards` at the
-  pinned commit, read from the sibling checkout `../patchbay-standards` — **then its three
-  judgment steps are recorded in `shape.md`, in this order: Docs, Version, and the standards
-  retrospective.** Docs: the documentation the change touches reads true after it. Version: the
-  change is recorded under `[Unreleased]` in `CHANGELOG.md`. CI (`.github/workflows/gate.yml`)
-  checks `patchbay-standards` out beside this repository and runs `scripts/gate.sh` on every pull
-  request and every push to `main`, and nothing else; the judgment steps are never run by a
-  machine.
+  `scripts/gate.sh`, six steps in order: `bash -n` on every shell script under `scripts/` as git
+  lists them (any other file there fails the step); `uv run --locked ruff format --check .`;
+  `uv run --locked ruff check .`; `uv run --locked mypy`; `uv run --locked pytest`, the four
+  reading their rules from the `[tool.*]` sections of `pyproject.toml` and their pins from its
+  `[dependency-groups] dev` as `uv.lock` resolves them; and `scripts/sync-standards.sh --check`,
+  holding `agent-os/standards/base/`, the `base:` section of `agent-os/standards/index.yml` and
+  the sync script byte-identical to `patchbay-standards` at the pinned commit, read from the
+  sibling checkout `../patchbay-standards` — **then its three judgment steps are recorded in
+  `shape.md`, in this order: Docs, Version, and the standards retrospective.** Docs: the
+  documentation the change touches reads true after it. Version: the change is recorded under
+  `[Unreleased]` in `CHANGELOG.md`. CI (`.github/workflows/gate.yml`) checks `patchbay-standards`
+  out beside this repository, installs uv pinned and runs `uv sync --locked`, then runs
+  `scripts/gate.sh` on every pull request and every push to `main`, and nothing else; the
+  judgment steps are never run by a machine.
 - The retrospective is the gate's last step: check what the spec taught against the standards,
   add the pattern it invented, correct what it proved stale, keep `index.yml` in step — or
   record `Standards retrospective: no changes` in the spec's `shape.md`. "No changes" is valid;
@@ -76,9 +80,11 @@ prohibition is on attribution markers, not on citing the work.
   retrospective with its entry in this repository's own sections of `index.yml`. Every standards
   edit is approved by a person, always.
 - The gate's own files — `scripts/gate.sh`, `scripts/gate-negative-tests.sh`,
-  `scripts/sync-standards.sh` (replaced only by the sync), `.github/workflows/gate.yml` and the
-  gate task in `.claude/commands/agent-os/shape-spec.md` — change only in a spec whose feature is
-  the gate, never as a side effect of another spec or from inside a retrospective.
+  `scripts/sync-standards.sh` (replaced only by the sync), the `[tool.*]` sections of
+  `pyproject.toml` (the rule set; its `[project]` and `[dependency-groups]` sections are the
+  package's and change in any spec), `.github/workflows/gate.yml` and the gate task in
+  `.claude/commands/agent-os/shape-spec.md` — change only in a spec whose feature is the gate,
+  never as a side effect of another spec or from inside a retrospective.
 - Retrospective edits are their own change set: listed separately when the work is
   reported so they can be committed apart from the feature, never buried in its diff. The
   `## Git` rule above applies.

@@ -1,11 +1,16 @@
 # Tech stack
 
-The decisions already made, in issue #1, for the toolchain spec to implement. Each is one line
-here; the spec that implements it writes the configuration and the standard that names it.
+The decisions already made, in issue #1, and implemented by the toolchain spec (issue #2,
+`agent-os/specs/2026-11-05-2018-toolchain-ruff-mypy-pytest-full-gate/`), whose `shape.md` holds
+each configuration choice as a Decision with its reason. Each is one line here; `pyproject.toml`
+is the configuration, and the standard that names it is written in `patchbay-standards` from that
+code.
 
 - **uv** manages the project and **`uv_build`** builds it (`pyproject.toml` already says so; the
-  lockfile is committed). Tools the gate runs are pinned in `scripts/gate.sh` and run through
-  `uvx`, installing nothing into the project.
+  lockfile is committed). Tools the gate runs are pinned exactly in `pyproject.toml`'s
+  `[dependency-groups] dev`, resolved in `uv.lock`, and run through `uv run --locked`: for a
+  package the lockfile is the pin, and mypy and pytest need the project installed, which `uvx`
+  cannot give them (issue #2 corrected issue #1's `uvx`).
 - **Python >= 3.12** (`requires-python`; `.python-version` pins the interpreter).
 - **ruff** for linting and formatting, with `select = ["ALL"]`; every disabled rule is named with
   its reason.

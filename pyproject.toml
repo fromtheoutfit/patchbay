@@ -1,8 +1,20 @@
+# The one configuration file of this repository: every tool is configured under [tool.*] here and
+# nowhere else (no setup.py, setup.cfg, requirements*.txt, tox.ini, .flake8, mypy.ini, pytest.ini
+# or .ruff.toml). .pre-commit-config.yaml beside it registers hooks and configures no tool.
+#
+# Two kinds of section. [project], [build-system] and [dependency-groups] are the package's and
+# change in any spec; adding a dependency is a Decision in that spec's shape.md (what it does, why
+# the standard library cannot, its license). The [tool.*] sections are the rule set that gate steps
+# 2-5 of scripts/gate.sh read (ruff format, ruff check, mypy, pytest); they are gate files and
+# change only in the gate's own spec, with a person (agent-os/standards/base/process/
+# verification-gate.md, "Pinned" and "The gate's own files change only in their own spec").
+
 [project]
 name = "patchbay-core"
-version = "0.1.0"
+version = "0.0.1"
 description = "Headless control of software instruments from Python: the contracts, host and CLI that patchbay-<instrument> adapters plug into."
 readme = "README.md"
+license = "MIT"
 authors = [
     { name = "Michael Witwicki", email = "michael@theout.fit" }
 ]
@@ -15,3 +27,80 @@ build-backend = "uv_build"
 
 [tool.uv.build-backend]
 module-name = "patchbay"
+
+# The tools the gate runs, pinned exactly, each with the date it was published; uv.lock holds the
+# resolution and the gate runs them under `uv run --locked`, so a pin changed here without
+# re-locking fails the gate rather than being rewritten. A pin is bumped deliberately, in the
+# gate's own spec, and the gate rerun. Each is a Decision in the spec that added it.
+[dependency-groups]
+dev = [
+    "ruff==0.17.4",          # published 2026-11-05; linter and formatter, gate steps 2-3
+    "mypy==2.4.1",           # published 2026-10-28; type checker, gate step 4
+    "pytest==9.2.0",         # published 2026-10-27; test runner, gate step 5
+    "hypothesis==6.170.14",  # published 2026-10-30; property-based tests, run by pytest
+    "pre-commit==4.7.0",     # published 2026-10-12; the local hook runner, not run by the gate
+]
+
+# ruff: gate steps 2 (format --check) and 3 (check). The formatter is ruff format; there is no black.
+[tool.ruff]
+# The interpreter the code targets; the floor of requires-python, stated so a rule set never
+# silently follows a raised floor.
+target-version = "py312"
+# 100: wide enough that a typed signature or a pydantic field with its description stays on one
+# line, narrow enough to read in a split editor and a GitHub diff.
+line-length = 100
+
+[tool.ruff.lint]
+# Every rule, then the ones this tree proved wrong, each with its reason. A rule the tree trips
+# is fixed in the code when the rule is right; it is ignored here only when it is wrong for this
+# tree, so the list is what the tree taught, not a list copied from memory.
+select = ["ALL"]
+ignore = [
+    # ruff warns that D203 and D211 are incompatible and drops D203 itself; said here so the choice
+    # is explicit: no blank line between a class line and its docstring.
+    "D203",
+    # ruff warns that D212 and D213 are incompatible and drops D213 itself; said here so the
+    # choice is explicit: a multi-line docstring's summary starts on its first line.
+    "D213",
+    # ruff warns that COM812 conflicts with the formatter, which owns trailing commas.
+    "COM812",
+    # The license is the repository's LICENSE file; a copyright header in every source file is
+    # noise every diff pays for and no reader needs.
+    "CPY001",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = [
+    # assert is how a pytest test states its expectation; pytest rewrites it to report values.
+    "S101",
+    # tests/ is a tree pytest collects from testpaths, never a package anything imports, so it
+    # carries no __init__.py. The convention this rests on: one basename per test file across
+    # tests/, which mypy (files = ["src", "tests"]) refuses to break as a duplicate module.
+    "INP001",
+]
+
+# mypy: gate step 4, over the package and the tests.
+[tool.mypy]
+strict = true
+files = ["src", "tests"]
+# The interpreter the types are checked against, the floor of requires-python.
+python_version = "3.12"
+# Code the checker proves unreachable is a bug, not dead weight; strict does not turn this on.
+warn_unreachable = true
+# Strict already implies it; stated because the issue names it: a name is exported only by
+# __all__ or an explicit `from x import y as y`, so the package's surface is what it says.
+implicit_reexport = false
+# An untyped third-party package gets its own [[tool.mypy.overrides]] block here, with
+# `module = ["name.*"]`, `ignore_missing_imports = true` and a comment saying which package and
+# why; never a global ignore. None is needed yet.
+
+# pytest: gate step 5.
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# -q: the gate's transcript is read by a person. --strict-markers: an unregistered marker is a
+# typo, so it fails. --strict-config: a key pytest does not know in this section fails the run,
+# as the gate standard asks of a rule-set config.
+addopts = "-q --strict-markers --strict-config"
+markers = [
+    "integration: needs a running instrument; not selected by the gate until a spec says so",
+]

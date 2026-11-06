@@ -138,7 +138,7 @@ Read the confirmed standards files to include their content in the plan context.
 
 **What you read here is a snapshot.** `standards.md` records the standards *as they read
 when the spec was shaped*. If the work teaches them something, they change at the END of
-the spec, in the retrospective (gate step 5) — not by editing `standards.md` after the fact.
+the spec, in the retrospective (gate step 9) — not by editing `standards.md` after the fact.
 If the plan needs a pattern no standard covers, that is a standards change to decide with
 the user now, not an ad-hoc call to make during implementation. For a base standard that
 decision is a proposal (see above), never an in-place edit.
@@ -193,16 +193,22 @@ Run the full verification gate, in order. The spec is not complete until every s
 
 1. `bash -n` on every shell script under `scripts/` as git lists them (tracked or untracked,
    not ignored) — every one must parse; any other file there fails the step by name
-2. `scripts/sync-standards.sh --check` — `agent-os/standards/base/`, the `base:` section of
+2. `uv run --locked ruff format --check .` — every file is formatted as ruff format writes it
+3. `uv run --locked ruff check .` — no violation of `[tool.ruff.lint]` in `pyproject.toml`
+4. `uv run --locked mypy` — no type error under `[tool.mypy]` (strict, over `src/` and `tests/`)
+5. `uv run --locked pytest` — every test under `tests/` passes (`[tool.pytest.ini_options]`)
+   — steps 2–5 run the tools pinned in `pyproject.toml`'s `[dependency-groups] dev` as `uv.lock`
+   resolves them; `--locked` fails the step when the lockfile no longer matches `pyproject.toml`
+6. `scripts/sync-standards.sh --check` — `agent-os/standards/base/`, the `base:` section of
    `agent-os/standards/index.yml` and the script itself are byte-identical to `patchbay-standards`
    at the commit in `agent-os/standards/base/.version`, read from the sibling checkout
    `../patchbay-standards`
-3. **Docs** — the documentation the change touches reads true after it: `README.md`, `CLAUDE.md`,
+7. **Docs** — the documentation the change touches reads true after it: `README.md`, `CLAUDE.md`,
    the header comments and pointers in the files changed, and every standard that names them.
    Record what was checked in `shape.md`.
-4. **Version** — the change is recorded under `[Unreleased]` in `CHANGELOG.md`, and the version
+8. **Version** — the change is recorded under `[Unreleased]` in `CHANGELOG.md`, and the version
    in `pyproject.toml` bumped when a release is cut. Record it in `shape.md`.
-5. **Standards retrospective** — per `agent-os/standards/base/process/standards-retrospective.md`:
+9. **Standards retrospective** — per `agent-os/standards/base/process/standards-retrospective.md`:
    check what this spec taught against the standards, add any pattern it invented,
    correct anything it proved stale, and keep `index.yml` in step — as an edit for a
    project standard, as a proposal under `## Standards retrospective (proposed, base)` for
@@ -210,7 +216,7 @@ Run the full verification gate, in order. The spec is not complete until every s
    can be committed apart from it. If the spec taught nothing, record
    `Standards retrospective: no changes` in `shape.md`. "No changes" is valid; silence is not.
 
-`scripts/gate.sh` runs steps 1–2 as one command. Steps 3–5 are judgment, in that order, recorded
+`scripts/gate.sh` runs steps 1–6 as one command. Steps 7–9 are judgment, in that order, recorded
 in `shape.md`; the retrospective is always last.
 
 If any step fails, fix the underlying issue (do not bypass) and rerun before marking the
@@ -231,8 +237,9 @@ After Task 1 is confirmed, continue building out the remaining implementation ta
 Each task should be specific and actionable.
 
 **Always include the final verification task** (`scripts/gate.sh` — `bash -n` over the shell
-scripts git lists under `scripts/`, `scripts/sync-standards.sh --check` — then Docs, Version and
-the standards retrospective) as the
+scripts git lists under `scripts/`, `uv run --locked ruff format --check .`, `uv run --locked ruff
+check .`, `uv run --locked mypy`, `uv run --locked pytest`, `scripts/sync-standards.sh --check` —
+then Docs, Version and the standards retrospective) as the
 last task in every plan, regardless of feature size. Do not skip this for "small" changes — a
 one-file fix is exactly the kind of spec that quietly invents a pattern.
 
@@ -245,7 +252,7 @@ Plan complete. When you approve and execute:
 
 1. Task 1 will save all spec documentation first
 2. Then implementation tasks will proceed
-3. The final task runs the verification gate: the two runnable steps, then Docs,
+3. The final task runs the verification gate: the six runnable steps, then Docs,
    Version and the standards retrospective. The spec is not complete until the gate is
    green, Docs and Version are recorded, AND the standards are either updated (or
    proposed, for base/) or recorded as "no changes"
@@ -304,7 +311,9 @@ None yet; see Step 5a. The toolchain, layout and typing standards will fill this
 ## Verification Gate
 
 Spec is not complete until `scripts/gate.sh` passes — `bash -n` on every shell script
-under `scripts/` as git lists them, and `scripts/sync-standards.sh --check` against
+under `scripts/` as git lists them; `uv run --locked ruff format --check .`, `uv run --locked
+ruff check .`, `uv run --locked mypy` and `uv run --locked pytest` under `pyproject.toml`'s
+`[tool.*]` rule set and `uv.lock`'s pins; and `scripts/sync-standards.sh --check` against
 `../patchbay-standards` at the commit in `agent-os/standards/base/.version` — and the three
 judgment steps are recorded, in this order: Docs, Version, then the standards retrospective
 below.
@@ -312,13 +321,13 @@ below.
 **Results ({date}):** [exit status, branch, `verification/gate-run.txt`; which negative
 tests were rerun if a gate file changed]
 
-**Docs (step 3):** [what documentation was checked and reads true]
+**Docs (step 7):** [what documentation was checked and reads true]
 
-**Version (step 4):** [the `[Unreleased]` entry in `CHANGELOG.md`; the version bump, if any]
+**Version (step 8):** [the `[Unreleased]` entry in `CHANGELOG.md`; the version bump, if any]
 
 ## Standards Retrospective
 
-Step 5, always last. Per `agent-os/standards/base/process/standards-retrospective.md`. Filled
+Step 9, always last. Per `agent-os/standards/base/process/standards-retrospective.md`. Filled
 in at the END of the spec, from the shipped diff — not at shaping time. "No changes" is valid;
 silence is not.
 
@@ -386,4 +395,4 @@ the current text.
 - **Feature-specific standards inform the plan** — If the plan conflicts with one, revise the plan, or record in `shape.md` why the standard doesn't apply here. A standard that's simply wrong gets fixed in the retrospective, not worked around — and a base standard gets *proposed*, not edited.
 - **Specs are discoverable** — Months later, someone can find this spec and understand what was built and why.
 - **The gate is the definition of done** — A spec with a script that does not parse, a base standard or index entry that drifted from the pinned commit, a doc that reads false, a missing CHANGELOG entry, or an unwritten retrospective is unfinished work, however small the change.
-- **Standards are a living record** — The retrospective in gate step 5 is how they grow. A spec that taught nothing says so in `shape.md`; a spec that taught something changes a project standard (or proposes a base change) in its own change set, verified against the shipped code rather than the plan.
+- **Standards are a living record** — The retrospective in gate step 9 is how they grow. A spec that taught nothing says so in `shape.md`; a spec that taught something changes a project standard (or proposes a base change) in its own change set, verified against the shipped code rather than the plan.

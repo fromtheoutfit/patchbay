@@ -11,6 +11,37 @@ a sync forward is recorded here as its own entry.
 
 ### Added
 
+- Third spec, `agent-os/specs/2026-11-05-2018-toolchain-ruff-mypy-pytest-full-gate/` (issue #2):
+  the Python toolchain, configured in `pyproject.toml` and nowhere else, and the gate given real
+  steps. Every configuration choice is a Decision in the spec's `shape.md`; this is the code the
+  toolchain base standard (patchbay-standards issue #4) is verified against.
+  - `pyproject.toml`: version 0.0.1 (the first deliberate number; uv's scaffold said 0.1.0),
+    `license = "MIT"`, and `[dependency-groups] dev` pinned exactly with publish dates: ruff
+    0.17.4, mypy 2.4.1, pytest 9.2.0, hypothesis 6.170.14, pre-commit 4.7.0, resolved in
+    `uv.lock`. `[tool.ruff]` (py312, line length 100, `select = ["ALL"]`, the ignores the tree
+    tripped with a comment each: D203, D213, COM812, CPY001; `tests/**` ignoring S101 and INP001),
+    `[tool.mypy]` (strict over `src` and `tests`, `warn_unreachable`, `implicit_reexport = false`,
+    3.12), `[tool.pytest.ini_options]` (`tests`, `-q --strict-markers --strict-config`, the
+    `integration` marker). The header names the `[tool.*]` sections as the gate's rule set.
+  - `src/patchbay/__init__.py` exports `__version__` from the installed metadata and nothing else;
+    `tests/conftest.py`; `tests/unit/test_version.py` holds the version test against
+    `pyproject.toml` and the hypothesis properties of the release-segment pattern it uses.
+  - `scripts/gate.sh`: six steps, `bash -n`, `uv run --locked ruff format --check .`, `uv run
+    --locked ruff check .`, `uv run --locked mypy`, `uv run --locked pytest`, then
+    `scripts/sync-standards.sh --check`; the header says the pins are the dev group's, run under
+    `--locked` so a stale lockfile fails rather than being rewritten. `scripts/gate-negative-tests.sh`
+    copies the package files into each scratch case and gains h (a misformatted module), i (an
+    unused import), k (`Any` returned as `int`, a strict-only error), l (a failing test), m (a
+    changed `line-length` applied; a value ruff refuses; TOML uv refuses) and n (a pin edited
+    without re-locking), 28 runs; j replays the workflow's `uv sync --locked` step.
+  - `.pre-commit-config.yaml`: local hooks `ruff check --fix` then `ruff format` through `uv run
+    --locked`, so ruff has one pin and one rule set; never mypy or pytest.
+  - `.github/workflows/gate.yml`: `astral-sh/setup-uv` v10.3.3 pinned by commit with uv 0.13.7,
+    the cache on and keyed on `uv.lock`, `uv sync --locked` from `patchbay/`, then the gate.
+  - `README.md` (install, the six steps, pre-commit, the one-config-file rule),
+    `agent-os/product/tech-stack.md` (`uv run --locked` and the lockfile as the pin, correcting
+    issue #1's `uvx`), `CLAUDE.md` and `shape-spec.md`'s gate task (the six steps).
+
 - First spec, `agent-os/specs/2026-11-05-1733-bootstrap-shape-spec-gate-ci-docs/` (issue #1): the
   frame every later spec lands in, before any Python tooling.
   - `.claude/commands/agent-os/shape-spec.md` customized for a consuming project: the two kinds of
