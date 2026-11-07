@@ -1,0 +1,509 @@
+Probes for the contracts revision after the review of PR 11, run 2026-11-07 on branch
+feature/10-contracts-instrument-protocol-models-errors-events-and-the-fakeinstrument-reference-implementation,
+at HEAD 6f4e7a8 with src/ and tests/ unchanged, before any source edit.
+Each probe is a scratch script outside the repository (the session's scratchpad, shown here as
+probes/<name>.py), run from the repository root through the locked environment: python as
+`uv run --locked python <script>`, mypy as `uv run --locked mypy <script>`, so mypy reads this
+repository's [tool.mypy] (strict, 3.12, warn_unreachable) and checks the one file named. Each
+script's source is shown before its output, as in the contracts spec's probes.txt. The cases sit
+the refusal beside the acceptance, so each tells the competing claims apart.
+
+Versions: python 3.12.16, pydantic 2.14.3, pydantic-core 2.50.4, numpy 2.5.4, mypy 2.4.1.
+
+What the revision takes from them (shape.md, Decisions):
+
+- findings.py: every finding the review says was reproduced (1, 2, 3, 5, 6, 7), and 4, 8, 9, 11,
+  12 and 17, reproduced at 6f4e7a8, with P1-P3, which the probes at shaping found. Finding 1's
+  1e-6 tempo is shown as its sample count, not allocated (the review's run was killed, exit 137).
+  Finding 4's instrument checks and stores each value in turn, and passes all eleven contract
+  tests while leaving cutoff changed by a patch it refused.
+- footing.py A, footing_typing.py: pydantic's three classmethods wrapped in the class body under
+  `if not TYPE_CHECKING:` keep a nested model's dict and JSON validation, every refusal with its
+  path, and every keyword (strict=False passes through); inspect.signature of each equals
+  BaseModel's. mypy strict reads pydantic's Self-typed signatures, reports no unreachable code
+  for the block, and still refuses a misspelled keyword: the one error expected, exit 1.
+- footing.py B: the exact sample count is an int for every extreme case, agrees with the float
+  formula on the contract tests' request (108000), and rounds half to even. int / int at a rate
+  of 10**400 is 0.0, where float / int raises OverflowError.
+- footing.py C: utcoffset(None) is zero for UTC, timezone.utc, ZoneInfo('UTC') and pydantic's
+  parsed Z, and None for Europe/London; astimezone(UTC) of pydantic's TzInfo(0) is the same
+  instant with tzinfo UTC itself.
+- footing.py D: Annotated[NewType, Field(min_length=1)] works as a Mapping key and refuses ''.
+- footing.py E: json.dumps then model_validate_json, strict, admits JSON's own forms (an enum's
+  value, base64 bytes, an ISO time, an array for a tuple, an int for a float) that model_validate
+  refuses, and still refuses "0.5" for a float, 1 for True and NaN. json.dumps raises TypeError
+  for a set or a datetime and ValueError for a circular reference: the two errors from_json_data
+  turns into a refusal.
+
+================================================================================
+probes/findings.py
+
+"""Each finding of the PR 11 review, and P1-P3, reproduced against the tree at 6f4e7a8."""
+
+import json
+import math
+import sys
+from collections.abc import Callable
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+import numpy as np
+import pydantic
+from pydantic import BaseModel, TypeAdapter
+
+from patchbay.errors import PatchbayError, PatchRejectedError, PatchbayValidationError
+from patchbay.events import Event, EventBus, ParameterChanged, PatchLoaded
+from patchbay.models import Patch, Pattern, Quantity, RenderRequest, RenderResult, Unit
+from patchbay.testing import CONTRACT_TESTS, FakeInstrument
+from patchbay.testing import contract_tests
+
+
+def case(label: str, action: Callable[[], object]) -> None:
+    try:
+        result = action()
+    except Exception as error:  # noqa: BLE001
+        print(f"{label}: {type(error).__module__}.{type(error).__name__}: {str(error)[:110]}")
+    else:
+        print(f"{label}: ok -> {result!r}"[:200])
+
+
+PATTERN = {"tempo_bpm": 120.0, "bars": 1, "beats_per_bar": 4, "notes": ()}
+REQUEST = {"sample_rate": 48000, "tail_seconds": 0.0}
+
+
+def render(pattern: dict[str, object], request: dict[str, object]) -> object:
+    result = FakeInstrument(EventBus()).render(
+        Pattern(**{**PATTERN, **pattern}), RenderRequest(**{**REQUEST, **request})
+    )
+    return result.audio.shape
+
+
+print("# 1, P1, P2: render on valid extreme inputs")
+case("1 tempo_bpm=1e-300", lambda: render({"tempo_bpm": 1e-300}, {}))
+case("1 tail_seconds=1e308", lambda: render({}, {"tail_seconds": 1e308}))
+seconds = 4 * 60.0 / 1e-6
+print(f"1 tempo_bpm=1e-6: not run; it asks for {seconds * 48000:.3g} samples")
+case("P1 sample_rate=10**400", lambda: render({}, {"sample_rate": 10**400}))
+case("P2 bars=10**400", lambda: render({"bars": 10**400}, {}))
+case(
+    "P2 audio_seconds at sample_rate=10**400",
+    lambda: RenderResult(
+        audio=np.zeros((1, 4), np.float32), sample_rate=10**400, elapsed_seconds=0.0
+    ).audio_seconds,
+)
+
+print("\n# 2: a subscription to a str breaks every publish")
+bus = EventBus()
+received: list[Event] = []
+bus.subscribe("parameter.changed", received.append)  # type: ignore[call-overload]
+bus.subscribe(None, received.append)
+fake = FakeInstrument(bus)
+case("2 set(level, 0.25)", lambda: fake.set("level", Quantity(value=0.25, unit=Unit.ratio)))
+print(f"2 after the raise: level is {fake.get('level').value}, the later subscriber got {len(received)} event(s)")
+
+print("\n# 3: validation pydantic runs for something else raises pydantic's error")
+bad = {"value": "x", "unit": Unit.hz}
+case("3 TypeAdapter(list[Quantity])", lambda: TypeAdapter(list[Quantity]).validate_python([bad]))
+
+
+class Preset(BaseModel):
+    q: Quantity
+
+
+case("3 a plain BaseModel with a Quantity field", lambda: Preset(q=bad))
+case("3 Quantity itself", lambda: Quantity(**bad))
+
+print("\n# 4: an instrument that loads one value at a time passes every contract test")
+
+
+class LoadsUntilARefusal(FakeInstrument):
+    """Checks the name, then checks and stores each value in turn, publishing PatchLoaded at the end."""
+
+    def load_patch(self, patch: Patch, /) -> None:
+        if patch.instrument != self.name:
+            raise PatchRejectedError("another instrument's patch")
+        for parameter_id, value in patch.values.items():
+            try:
+                self._parameter(parameter_id).check(value)
+            except PatchbayError as error:
+                raise PatchRejectedError(str(error)) from error
+            self._values[parameter_id] = value
+        self._bus.publish(PatchLoaded(source=self.name, correlation_id="c", instrument=self.name, parameter_count=len(patch.values)))
+
+
+failed = []
+for test in CONTRACT_TESTS:
+    probe_bus = EventBus()
+    try:
+        test(LoadsUntilARefusal(probe_bus), probe_bus)
+    except AssertionError as error:
+        failed.append(f"{test.__name__}: {error}")
+print(f"4 {len(CONTRACT_TESTS)} contract tests, {len(failed)} failed: {failed}")
+partial = LoadsUntilARefusal(EventBus())
+case(
+    "4 a good cutoff, then decay in the wrong unit",
+    lambda: partial.load_patch(
+        Patch(
+            instrument="fake",
+            values={
+                "cutoff": Quantity(value=20.0, unit=Unit.hz),
+                "decay": Quantity(value=1.0, unit=Unit.hz),
+            },
+        )
+    ),
+)
+print(f"4 after the refusal: cutoff is {partial.get('cutoff').value} (it was 20000.0)")
+
+print("\n# 5: strict refuses the JSON-shaped dict")
+patch = Patch(
+    instrument="fake", values=FakeInstrument(EventBus()).patch().values, opaque={"wt": b"\x00\xff"}
+)
+data = json.loads(patch.model_dump_json())
+case("5 Patch.model_validate(json.loads(...))", lambda: Patch.model_validate(data))
+case("5 Patch.model_validate_json(json.dumps(...)) == patch", lambda: Patch.model_validate_json(json.dumps(data)) == patch)
+pattern_data = {**PATTERN, "notes": [{"pitch": 60, "velocity": 100, "start_beats": 0, "duration_beats": 1, "channel": 0}]}
+case("5 Pattern.model_validate, notes a list", lambda: Pattern.model_validate(pattern_data))
+
+print("\n# 6: _out_of_range at large bounds")
+for maximum in (2.0**53, sys.float_info.max):
+    print(f"6 maximum={maximum!r}: maximum + 1.0 == maximum is {maximum + 1.0 == maximum}; nextafter is {math.nextafter(maximum, math.inf)!r}")
+case("6 Quantity at maximum + 1.0 for float max", lambda: Quantity(value=sys.float_info.max * 2, unit=Unit.hz))
+
+print("\n# 7: audio that is not finite")
+nan = RenderResult(audio=np.full((1, 2), np.nan, np.float32), sample_rate=48000, elapsed_seconds=0.0)
+print(f"7 NaN audio accepted; r == r is {nan == nan}")
+case("7 inf audio", lambda: RenderResult(audio=np.full((1, 2), np.inf, np.float32), sample_rate=48000, elapsed_seconds=0.0).audio_seconds)
+
+print("\n# 8, P3: an empty parameter id")
+one = Quantity(value=1.0, unit=Unit.hz)
+case("8 Patch.values with an empty key", lambda: list(Patch(instrument="fake", values={"": one}).values))
+case("P3 ParameterChanged.id empty", lambda: ParameterChanged(source="s", correlation_id="c", id="", old=one, new=one).id)
+
+print("\n# 9: Europe/London by the month")
+for month in (1, 7):
+    at = datetime(2026, month, 15, 12, tzinfo=ZoneInfo("Europe/London"))
+    case(f"9 month {month}", lambda at=at: ParameterChanged(source="s", correlation_id="c", id="x", old=one, new=one, at=at).at.isoformat())
+
+print("\n# 11, 12: the error fields, and where ErrorDetails comes from")
+validation = pydantic.ValidationError.from_exception_data("Q", [])
+print(f"11 pydantic's ValidationError.errors is callable: {callable(validation.errors)}")
+case("11 PatchbayValidationError.errors()", lambda: PatchbayValidationError(()).errors())  # type: ignore[operator]
+print(f"12 pydantic re-exports ErrorDetails: {hasattr(pydantic, 'ErrorDetails')}")
+
+print("\n# 17: contract tests named test_*")
+print(f"17 {sum(test.__name__.startswith('test_') for test in CONTRACT_TESTS)} of {len(CONTRACT_TESTS)} start with test_; module-level names: {sorted(n for n in vars(contract_tests) if n.startswith('test_'))[:2]} ...")
+
+-------------------------------------------------------------------------------- output
+
+# 1, P1, P2: render on valid extreme inputs
+1 tempo_bpm=1e-300: builtins.ValueError: Maximum allowed dimension exceeded
+1 tail_seconds=1e308: builtins.OverflowError: cannot convert float infinity to integer
+1 tempo_bpm=1e-6: not run; it asks for 1.15e+13 samples
+P1 sample_rate=10**400: builtins.OverflowError: int too large to convert to float
+P2 bars=10**400: builtins.OverflowError: int too large to convert to float
+P2 audio_seconds at sample_rate=10**400: builtins.OverflowError: int too large to convert to float
+
+# 2: a subscription to a str breaks every publish
+2 set(level, 0.25): builtins.TypeError: isinstance() arg 2 must be a type, a tuple of types, or a union
+2 after the raise: level is 0.25, the later subscriber got 0 event(s)
+
+# 3: validation pydantic runs for something else raises pydantic's error
+3 TypeAdapter(list[Quantity]): pydantic_core._pydantic_core.ValidationError: 1 validation error for list[function-after[_ratio_is_normalized(), Quantity]]
+0.value
+  Input should be a vali
+3 a plain BaseModel with a Quantity field: pydantic_core._pydantic_core.ValidationError: 1 validation error for Preset
+q.value
+  Input should be a valid number [type=float_type, input_value='x', inpu
+3 Quantity itself: patchbay.errors.PatchbayValidationError: 1 validation error(s): value: Input should be a valid number
+
+# 4: an instrument that loads one value at a time passes every contract test
+4 11 contract tests, 0 failed: []
+4 a good cutoff, then decay in the wrong unit: patchbay.errors.PatchRejectedError: patch rejected: parameter 'decay' takes unit 'seconds', given 'hz'
+4 after the refusal: cutoff is 20.0 (it was 20000.0)
+
+# 5: strict refuses the JSON-shaped dict
+5 Patch.model_validate(json.loads(...)): patchbay.errors.PatchbayValidationError: 9 validation error(s): values.cutoff.unit: Input should be an instance of Unit; values.decay.unit: Input shoul
+5 Patch.model_validate_json(json.dumps(...)) == patch: ok -> True
+5 Pattern.model_validate, notes a list: patchbay.errors.PatchbayValidationError: 1 validation error(s): notes: Input should be a valid tuple
+
+# 6: _out_of_range at large bounds
+6 maximum=9007199254740992.0: maximum + 1.0 == maximum is True; nextafter is 9007199254740994.0
+6 maximum=1.7976931348623157e+308: maximum + 1.0 == maximum is True; nextafter is inf
+6 Quantity at maximum + 1.0 for float max: patchbay.errors.PatchbayValidationError: 1 validation error(s): value: Input should be a finite number
+
+# 7: audio that is not finite
+7 NaN audio accepted; r == r is False
+7 inf audio: ok -> 4.1666666666666665e-05
+
+# 8, P3: an empty parameter id
+8 Patch.values with an empty key: ok -> ['']
+P3 ParameterChanged.id empty: ok -> ''
+
+# 9: Europe/London by the month
+9 month 1: ok -> '2026-01-15T12:00:00+00:00'
+9 month 7: patchbay.errors.PatchbayValidationError: 1 validation error(s): at: Value error, an event's time is in UTC, given 2026-07-15T12:00:00+01:00
+
+# 11, 12: the error fields, and where ErrorDetails comes from
+11 pydantic's ValidationError.errors is callable: True
+11 PatchbayValidationError.errors(): builtins.TypeError: 'tuple' object is not callable
+12 pydantic re-exports ErrorDetails: False
+
+# 17: contract tests named test_*
+17 11 of 11 start with test_; module-level names: ['test_a_rejected_patch_changes_nothing', 'test_a_value_out_of_range_raises_value_out_of_range'] ...
+
+================================================================================
+probes/footing.py
+
+"""What the revision's design rests on, at the locked pydantic, numpy and Python."""
+
+import functools
+import inspect
+import json
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
+from datetime import UTC, datetime, timedelta, timezone
+from fractions import Fraction
+from typing import TYPE_CHECKING, Annotated, NewType
+from zoneinfo import ZoneInfo
+
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
+
+
+def case(label: str, action: Callable[[], object]) -> None:
+    try:
+        result = action()
+    except Exception as error:  # noqa: BLE001
+        print(f"{label}: {type(error).__name__}: {str(error).splitlines()[0][:100]}")
+    else:
+        print(f"{label}: ok -> {result!r}"[:160])
+
+
+class Refused(Exception):
+    pass
+
+
+@contextmanager
+def _refusals() -> Iterator[None]:
+    try:
+        yield
+    except ValidationError as error:
+        raise Refused([".".join(map(str, e["loc"])) for e in error.errors()]) from error
+
+
+def _refusing[**P, R](validate: Callable[P, R]) -> Callable[P, R]:
+    @functools.wraps(validate)
+    def refusing(*args: P.args, **kwargs: P.kwargs) -> R:
+        with _refusals():
+            return validate(*args, **kwargs)
+
+    return refusing
+
+
+print("# A: pydantic's classmethods wrapped in the class body, not restated")
+
+
+class Base(BaseModel, frozen=True):
+    model_config = ConfigDict(strict=True, extra="forbid")
+    if not TYPE_CHECKING:
+        model_validate = classmethod(_refusing(BaseModel.model_validate.__func__))
+        model_validate_json = classmethod(_refusing(BaseModel.model_validate_json.__func__))
+        model_validate_strings = classmethod(_refusing(BaseModel.model_validate_strings.__func__))
+
+
+class Inner(Base, frozen=True):
+    x: float
+
+
+class Outer(Base, frozen=True):
+    inner: Inner
+    name: str
+
+
+case("A1 Outer.model_validate, nested dict", lambda: Outer.model_validate({"inner": {"x": 1}, "name": "n"}))
+case("A2 nested JSON round trip", lambda: Outer.model_validate_json(Outer(inner=Inner(x=2.0), name="n").model_dump_json()))
+case("A3 a nested refusal, its path kept", lambda: Outer.model_validate({"inner": {"x": "a"}, "name": 1}))
+case("A4 bad JSON", lambda: Outer.model_validate_json("{"))
+case("A5 model_validate_strings", lambda: Inner.model_validate_strings({"x": "q"}))
+case("A6 a keyword passes through (strict=False)", lambda: Inner.model_validate({"x": "1.5"}, strict=False))
+for name in ("model_validate", "model_validate_json", "model_validate_strings"):
+    same = inspect.signature(getattr(Inner, name)) == inspect.signature(getattr(BaseModel, name))
+    print(f"A7 inspect.signature(Inner.{name}) == BaseModel's: {same}")
+print(f"A8 field names: {list(Outer.model_fields)}")
+
+print("\n# B: the exact sample count")
+cases = [(120.0, 1, 4, 0.25, 48000), (1e-300, 1, 4, 0.0, 48000), (120.0, 1, 4, 1e308, 48000),
+         (120.0, 1, 4, 0.0, 10**400), (120.0, 10**400, 4, 0.0, 48000)]
+for tempo, bars, beats, tail, rate in cases:
+    exact = round((Fraction(bars * beats * 60) / Fraction(tempo) + Fraction(tail)) * rate)
+    shown = exact if exact < 10**12 else f"an int of {len(str(exact))} digits"
+    print(f"B1 tempo={tempo!r} bars={'10**400' if bars > 10**9 else bars} tail={tail!r} rate={'10**400' if rate > 10**9 else rate}: {shown}")
+floaty = round((1 * 4 * 60.0 / 120.0 + 0.25) * 48000)
+print(f"B2 the float formula for the contract tests' request: {floaty}")
+print(f"B3 round(Fraction(5, 2)) = {round(Fraction(5, 2))}, round(Fraction(7, 2)) = {round(Fraction(7, 2))}, type {type(round(Fraction(7, 2))).__name__}")
+case("B4 int / int at rate 10**400", lambda: 108000 / 10**400)
+case("B5 float / int at rate 10**400", lambda: 108000.0 / 10**400)
+
+print("\n# C: a zone's offset at every instant")
+
+
+class Stamp(BaseModel):
+    at: datetime
+
+
+parsed = Stamp.model_validate_json('{"at": "2026-11-07T08:00:00Z"}').at.tzinfo
+for label, tz in [("UTC", UTC), ("timezone.utc", timezone.utc), ("ZoneInfo('UTC')", ZoneInfo("UTC")),
+                  ("pydantic's parsed Z", parsed), ("an hour east", timezone(timedelta(hours=1))),
+                  ("Europe/London", ZoneInfo("Europe/London"))]:
+    print(f"C1 {label}: utcoffset(None) = {tz.utcoffset(None)!r}")
+at = datetime(2026, 11, 7, 8, tzinfo=parsed)
+print(f"C2 astimezone(UTC) of pydantic's Z: tzinfo is UTC {at.astimezone(UTC).tzinfo is UTC}, same instant {at.astimezone(UTC) == at}")
+print(f"C3 timezone.utc is UTC: {timezone.utc is UTC}")
+
+print("\n# D: a constrained NewType as a Mapping key")
+Id = NewType("Id", str)
+
+
+class Keys(BaseModel):
+    model_config = ConfigDict(strict=True)
+    values: Mapping[Annotated[Id, Field(min_length=1)], int]
+
+
+case("D1 key 'a'", lambda: Keys(values={"a": 1}).values)
+case("D2 key ''", lambda: Keys(values={"": 1}))
+
+print("\n# E: json.dumps then model_validate_json, strict")
+
+
+
+
+from enum import StrEnum
+
+
+class Colour(StrEnum):
+    red = "red"
+
+
+class Json(Base, frozen=True):
+    model_config = ConfigDict(ser_json_bytes="base64", val_json_bytes="base64", allow_inf_nan=False)
+    colour: Colour
+    blob: bytes
+    at: datetime
+    items: tuple[int, ...]
+    ratio: float
+    flag: bool
+
+
+good = {"colour": "red", "blob": "AP8=", "at": "2026-11-07T08:00:00Z", "items": [1, 2], "ratio": 1, "flag": True}
+case("E1 JSON's own forms", lambda: Json.model_validate_json(json.dumps(good)))
+case("E2 the same dict through model_validate", lambda: Json.model_validate(good))
+case("E3 '0.5' for a float", lambda: Json.model_validate_json(json.dumps({**good, "ratio": "0.5"})))
+case("E4 1 for True", lambda: Json.model_validate_json(json.dumps({**good, "flag": 1})))
+case("E5 NaN", lambda: Json.model_validate_json(json.dumps({**good, "ratio": float("nan")})))
+case("E6 json.dumps of a set", lambda: json.dumps({"items": {1, 2}}))
+case("E7 json.dumps of a datetime", lambda: json.dumps({"at": datetime.now(UTC)}))
+loop: list[object] = []
+loop.append(loop)
+case("E8 json.dumps of a circular list", lambda: json.dumps(loop))
+
+-------------------------------------------------------------------------------- output
+
+# A: pydantic's classmethods wrapped in the class body, not restated
+A1 Outer.model_validate, nested dict: ok -> Outer(inner=Inner(x=1.0), name='n')
+A2 nested JSON round trip: ok -> Outer(inner=Inner(x=2.0), name='n')
+A3 a nested refusal, its path kept: Refused: ['inner.x', 'name']
+A4 bad JSON: Refused: ['']
+A5 model_validate_strings: Refused: ['x']
+A6 a keyword passes through (strict=False): ok -> Inner(x=1.5)
+A7 inspect.signature(Inner.model_validate) == BaseModel's: True
+A7 inspect.signature(Inner.model_validate_json) == BaseModel's: True
+A7 inspect.signature(Inner.model_validate_strings) == BaseModel's: True
+A8 field names: ['inner', 'name']
+
+# B: the exact sample count
+B1 tempo=120.0 bars=1 tail=0.25 rate=48000: 108000
+B1 tempo=1e-300 bars=1 tail=0.0 rate=48000: an int of 308 digits
+B1 tempo=120.0 bars=1 tail=1e+308 rate=48000: an int of 313 digits
+B1 tempo=120.0 bars=1 tail=0.0 rate=10**400: an int of 401 digits
+B1 tempo=120.0 bars=10**400 tail=0.0 rate=48000: an int of 405 digits
+B2 the float formula for the contract tests' request: 108000
+B3 round(Fraction(5, 2)) = 2, round(Fraction(7, 2)) = 4, type int
+B4 int / int at rate 10**400: ok -> 0.0
+B5 float / int at rate 10**400: OverflowError: int too large to convert to float
+
+# C: a zone's offset at every instant
+C1 UTC: utcoffset(None) = datetime.timedelta(0)
+C1 timezone.utc: utcoffset(None) = datetime.timedelta(0)
+C1 ZoneInfo('UTC'): utcoffset(None) = datetime.timedelta(0)
+C1 pydantic's parsed Z: utcoffset(None) = datetime.timedelta(0)
+C1 an hour east: utcoffset(None) = datetime.timedelta(seconds=3600)
+C1 Europe/London: utcoffset(None) = None
+C2 astimezone(UTC) of pydantic's Z: tzinfo is UTC True, same instant True
+C3 timezone.utc is UTC: True
+
+# D: a constrained NewType as a Mapping key
+D1 key 'a': ok -> {'a': 1}
+D2 key '': ValidationError: 1 validation error for Keys
+
+# E: json.dumps then model_validate_json, strict
+E1 JSON's own forms: ok -> Json(colour=<Colour.red: 'red'>, blob=b'\x00\xff', at=datetime.datetime(2026, 11, 7, 8, 0, tzinfo=TzInfo(0)), items=(1, 2), ratio=1.0
+E2 the same dict through model_validate: Refused: ['colour', 'blob', 'at', 'items']
+E3 '0.5' for a float: Refused: ['ratio']
+E4 1 for True: Refused: ['flag']
+E5 NaN: Refused: ['ratio']
+E6 json.dumps of a set: TypeError: Object of type set is not JSON serializable
+E7 json.dumps of a datetime: TypeError: Object of type datetime is not JSON serializable
+E8 json.dumps of a circular list: ValueError: Circular reference detected
+
+================================================================================
+probes/footing_typing.py
+
+"""mypy strict reads pydantic's own signatures through a wrap it does not see."""
+
+import functools
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from typing import TYPE_CHECKING, assert_type
+
+from pydantic import BaseModel, ConfigDict, ValidationError
+
+
+@contextmanager
+def _refusals() -> Iterator[None]:
+    try:
+        yield
+    except ValidationError as error:
+        raise ValueError from error
+
+
+def _refusing[**P, R](validate: Callable[P, R]) -> Callable[P, R]:
+    @functools.wraps(validate)
+    def refusing(*args: P.args, **kwargs: P.kwargs) -> R:
+        with _refusals():
+            return validate(*args, **kwargs)
+
+    return refusing
+
+
+class Base(BaseModel, frozen=True):
+    model_config = ConfigDict(strict=True)
+    if not TYPE_CHECKING:
+        model_validate = classmethod(_refusing(BaseModel.model_validate.__func__))
+        model_validate_json = classmethod(_refusing(BaseModel.model_validate_json.__func__))
+        model_validate_strings = classmethod(_refusing(BaseModel.model_validate_strings.__func__))
+
+
+class Inner(Base, frozen=True):
+    x: float
+
+
+assert_type(Inner.model_validate({"x": 1}), Inner)
+assert_type(Inner.model_validate_json('{"x": 1}', strict=True), Inner)
+assert_type(Inner.model_validate_strings({"x": "1"}, context=None), Inner)
+Inner.model_validate({"x": 1}, stirct=True)  # the one error expected: a misspelled keyword
+
+-------------------------------------------------------------------------------- output (uv run --locked mypy probes/footing_typing.py)
+
+probes/footing_typing.py:43: error: Unexpected keyword argument "stirct" for "model_validate" of "BaseModel"; did you mean "strict"?  [call-arg]
+probes/footing_typing.py:43: note: "model_validate" defined in "pydantic.main"
+Found 1 error in 1 file (checked 1 source file)
+exit=1

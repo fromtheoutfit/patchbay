@@ -13,6 +13,47 @@ sync's own commit changes nothing but the synced files
 
 ### Added
 
+- Seventh spec, `agent-os/specs/2026-11-07-0806-contracts-models-events-errors-fake/` (issue #10):
+  the first code in core, the contracts every adapter implements. Every departure from the
+  issue's text is a Decision in the spec's `shape.md`, each the owner's; what pydantic, numpy and
+  mypy do that the design rests on is its `verification/probes.txt`. The version stays 0.0.1.
+  - `src/patchbay/errors.py`: `PatchbayError` and, under it, `ParameterNotFoundError`,
+    `UnitMismatchError`, `ValueOutOfRangeError` (new, against the issue's list),
+    `PatchRejectedError`, `RenderFailedError`, `SubscriberFailedError` and
+    `PatchbayValidationError`; the issue's names take the `Error` suffix ruff's N818 asks. Each
+    carries its fields as attributes and `args`, and builds its message from them.
+  - `src/patchbay/models.py`: `ParameterId` and `PresetKey`, `Unit`, and the models on
+    `PatchbayModel`: frozen (written on each class line, where mypy reads it), closed, finite and
+    strict, and raising `PatchbayValidationError` from the constructor, the three
+    `model_validate*` methods, assignment and deletion. `Quantity`, `Parameter` (with `check`,
+    the rule a value meets), `Patch` (read-only mappings, sorted, opaque bytes as base64 in
+    JSON), `Note`, `Pattern`, `RenderRequest` and `RenderResult` (a read-only float32
+    `(channels, samples)` copy, `elapsed_seconds` in place of the issue's `duration_seconds`,
+    `audio_seconds` computed).
+  - `src/patchbay/events.py`: `Event` (stamped in UTC when built), `ParameterChanged`,
+    `PatchLoaded`, `RenderCompleted` (carrying `elapsed_seconds` and `audio_seconds`), the
+    generic `Subscriber` protocol and the synchronous `EventBus`, which runs every subscriber
+    before raising `SubscriberFailedError`.
+  - `src/patchbay/contracts.py`: the runtime-checkable `Instrument` protocol, positional-only, and
+    `Subscriber` re-exported from `events.py`, where it moved from the issue's place.
+  - `src/patchbay/testing/`: `FakeInstrument`, the reference implementation (eight parameters,
+    a sine voice, a clip warning); `RecordingSubscriber`; `contract_tests.py`, the contract tests
+    listed in `CONTRACT_TESTS`, failing with `ContractViolationError` and importing no pytest, in
+    the names and number the revision after the review of PR 11 (the eighth spec, below) settled.
+  - `src/patchbay/__init__.py` re-exports the contracts, models, events and errors beside
+    `__version__`.
+  - `tests/unit/`: a test module per source module, hypothesis properties of the `Quantity`,
+    `Note` and `Pattern` validators and of a `Patch`'s JSON round trip with arbitrary opaque
+    bytes; `tests/unit/testing/conftest.py`, the fixtures an adapter copies; every contract test
+    run against FakeInstrument and, each, against a fake broken its way.
+    `tests/unit/test_package.py` leaves submodules out of the names held to `__all__` and holds
+    every exported name to the object its module defines.
+  - `pyproject.toml`: `numpy>=2.5.4,<3` and `pydantic>=2.14.3,<3` in `[project] dependencies`;
+    `uv.lock` gains them and their dependencies and changes nothing else
+    (`verification/uv-lock-diff.txt`).
+  - `README.md` (the layout, what `uv sync` installs) and `agent-os/product/tech-stack.md`
+    (pydantic in use, numpy's line).
+
 - Third spec, `agent-os/specs/2026-11-05-2018-toolchain-ruff-mypy-pytest-full-gate/` (issue #2):
   the Python toolchain, configured in `pyproject.toml` and nowhere else, and the gate given real
   steps. Every configuration choice is a Decision in the spec's `shape.md`; this is the code the
@@ -87,6 +128,44 @@ sync's own commit changes nothing but the synced files
   - This file.
 
 ### Changed
+
+- Eighth spec, `agent-os/specs/2026-11-07-1432-contracts-revision-after-pr-11-review/`, the
+  revision after the owner's review of PR 11: seventeen findings and three more of the same kind
+  the probes found, each with its disposition in the spec's `plan.md`, each reproduced at
+  `6f4e7a8` in its `verification/probes.txt`. The version stays 0.0.1.
+  - `src/patchbay/models.py`: `PatchbayModel.from_json_data` validates data in JSON's form (as
+    `json.loads`, YAML or TOML give it) by pydantic's JSON rules, and `model_validate` stays as
+    strict as it was. The three `model_validate*` wrap pydantic's own methods rather than restate
+    their signatures, so every keyword passes through and the three `noqa: PLR0913` go. The
+    `PatchbayValidationError` promise is narrowed to a model's own entry points: a `TypeAdapter`,
+    or a plain `BaseModel` holding a patchbay model, raises pydantic's error.
+    `RenderRequest.samples` and `sample_at`, in exact arithmetic, are the one rule for where a
+    render's samples fall.
+    `RenderResult` refuses audio that is not finite, and its `audio_seconds` holds at any rate. A
+    `Patch.values` key is never empty.
+  - `src/patchbay/events.py`: `subscribe` returns a `Subscription` (`cancel()`, a context manager)
+    and refuses a type that is not an event, or a subscriber that cannot be called, with the new
+    `SubscriptionRejectedError`, where a bad subscription broke every publish after it. `Event.at`
+    is refused unless its zone is UTC at every instant (Europe/London was accepted in January and
+    refused in July) and is held as `datetime.UTC`. `ParameterChanged.id` is never empty.
+  - `src/patchbay/errors.py`: `SubscriptionRejectedError`; `PatchbayValidationError.errors` is
+    `.details`, since pydantic's `errors` is a method, and `SubscriberFailedError.errors` is
+    `.exceptions`. `pydantic-core>=2.50.4,<3` joins `[project] dependencies`, since `errors.py`
+    imports its `ErrorDetails`; `uv.lock` changes only patchbay-core's own entry
+    (`verification/uv-lock-diff.txt`).
+  - `src/patchbay/testing/`: `FakeInstrument` refuses a render past `MAX_SAMPLES` or
+    `MAX_SAMPLE_RATE` with `RenderFailedError` before allocating anything, where valid extreme
+    requests raised built-in exceptions or ran out of memory. It mixes into one float32 buffer,
+    raises `PatchRejectedError` from the error that refused a patch, and reads its parameters
+    through `parameters()`. The contract tests drop their `test_` prefix, so pytest never collects
+    one an adapter imports by name, refuse a value one float past each bound, and gain
+    `a_patch_refused_part_way_changes_nothing` and `an_impossible_render_raises_render_failed`:
+    thirteen.
+  - `tests/unit/`: a test for each change. A fake with bounds at 2**53 and at the largest float
+    passes every contract test, and fails two with the old bound arithmetic put back
+    (`verification/mutations.txt`).
+  - `README.md`: the JSON-data entry point, subscriptions, the thirteen contract tests and
+    pydantic-core.
 
 - Sixth spec, `agent-os/specs/2026-11-07-0711-gate-revision-after-pr-9-review/`, the gate's spec
   for the revision after the owner's review of PR 9 (nine findings, each with its disposition in

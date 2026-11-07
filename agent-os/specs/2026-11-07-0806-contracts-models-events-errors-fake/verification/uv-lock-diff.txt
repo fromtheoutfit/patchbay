@@ -1,0 +1,107 @@
+uv.lock before and after adding pydantic and numpy to [project] dependencies, 2026-11-07, branch feature/10-contracts-instrument-protocol-models-errors-events-and-the-fakeinstrument-reference-implementation.
+Command: uv lock (uv 0.13.7), never --upgrade. The diff is additions only: no line removed, so
+ruff, mypy, pytest, hypothesis and pre-commit, and everything they resolve (typing-extensions 4.16.0 among it), are unchanged.
+
+$ git diff --numstat uv.lock
+226	0	uv.lock
+
+$ git diff uv.lock | grep -c "^-[^-]"   (removed lines)
+0
+
+$ uv lock (output)
+Added annotated-types v0.8.0
+Added numpy v2.5.4
+Added pydantic v2.14.3
+Added pydantic-core v2.50.4
+Added typing-inspection v0.4.5
+
+$ git diff uv.lock, the url and hash lines left out
+diff --git a/uv.lock b/uv.lock
+index beb9dd8..bd83db5 100644
+--- a/uv.lock
++++ b/uv.lock
+@@ -7,4 +7,13 @@ resolution-markers = [
+ ]
+ 
++[[package]]
++name = "annotated-types"
++version = "0.8.0"
++source = { registry = "https://pypi.org/simple" }
++wheels = [
++]
++
+ [[package]]
+ name = "ast-serialize"
+@@ -379,4 +388,77 @@ wheels = [
+ ]
+ 
++[[package]]
++name = "numpy"
++version = "2.5.4"
++source = { registry = "https://pypi.org/simple" }
++wheels = [
++]
++
+ [[package]]
+ name = "packaging"
+@@ -392,4 +474,8 @@ name = "patchbay-core"
+ version = "0.0.1"
+ source = { editable = "." }
++dependencies = [
++    { name = "numpy" },
++    { name = "pydantic" },
++]
+ 
+ [package.dev-dependencies]
+@@ -403,4 +489,8 @@ dev = [
+ 
+ [package.metadata]
++requires-dist = [
++    { name = "numpy", specifier = ">=2.5.4,<3" },
++    { name = "pydantic", specifier = ">=2.14.3,<3" },
++]
+ 
+ [package.metadata.requires-dev]
+@@ -456,4 +546,128 @@ wheels = [
+ ]
+ 
++[[package]]
++name = "pydantic"
++version = "2.14.3"
++source = { registry = "https://pypi.org/simple" }
++dependencies = [
++    { name = "annotated-types" },
++    { name = "pydantic-core" },
++    { name = "typing-extensions" },
++    { name = "typing-inspection" },
++]
++wheels = [
++]
++
++[[package]]
++name = "pydantic-core"
++version = "2.50.4"
++source = { registry = "https://pypi.org/simple" }
++dependencies = [
++    { name = "typing-extensions" },
++]
++wheels = [
++]
++
+ [[package]]
+ name = "pygments"
+@@ -582,4 +796,16 @@ wheels = [
+ ]
+ 
++[[package]]
++name = "typing-inspection"
++version = "0.4.5"
++source = { registry = "https://pypi.org/simple" }
++dependencies = [
++    { name = "typing-extensions" },
++]
++wheels = [
++]
++
+ [[package]]
+ name = "virtualenv"

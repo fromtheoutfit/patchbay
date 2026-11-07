@@ -1,0 +1,41 @@
+Gate run 2026-11-07 on branch feature/10-contracts-instrument-protocol-models-errors-events-and-the-fakeinstrument-reference-implementation, the last act before hand-over of the contracts spec (issue #10).
+
+$ scripts/gate.sh
+
+
+== 1/6  bash -n on every shell script under scripts/ (tracked or untracked, not ignored)
+ok   scripts/gate-negative-tests.sh
+ok   scripts/gate.sh
+ok   scripts/sync-standards.sh
+
+== 2/6  uv sync --locked, then uv run --locked ruff format --check over the .py and .pyi files git lists (the locked toolchain; the formatter)
+Resolved 31 packages in 14ms
+Checked 30 packages in 6ms
+ok   the locked toolchain synced
+19 files already formatted
+ok   19 file(s) formatted
+
+== 3/6  uv run --locked ruff check over the same files (the linter: [tool.ruff.lint] of pyproject.toml)
+All checks passed!
+ok   no violation
+
+== 4/6  uv run --locked mypy over the .py and .pyi files git lists under src/ and tests/ ([tool.mypy] of pyproject.toml: strict)
+Success: no issues found in 19 source files
+ok   no type error
+
+== 5/6  uv run --locked pytest ([tool.pytest.ini_options] of pyproject.toml, over tests/, once no .py file there is one git ignores)
+........................................................................ [ 38%]
+........................................................................ [ 76%]
+............................................                             [100%]
+188 passed in 0.60s
+ok   every test passed
+
+== 6/6  scripts/sync-standards.sh --check: agent-os/standards/base/, the base: section and the script match patchbay-standards at the commit in .version (../patchbay-standards)
+check base standards against 11ceffdbd088bfb753dc54efa198dcb1ad6af0c9  (/Users/michaelwitwicki/Code/Audio/patchbay-standards)
+  index    base: section identical
+  script   scripts/sync-standards.sh matches
+{"mode":"check","upstream":"/Users/michaelwitwicki/Code/Audio/patchbay-standards","commit":"11ceffdbd088bfb753dc54efa198dcb1ad6af0c9","missing":[],"extra":[],"changed":[],"index":"identical","script":"matches","ok":true}
+ok   agent-os/standards/base and the base: section of agent-os/standards/index.yml match patchbay-standards at 11ceffdbd088bfb753dc54efa198dcb1ad6af0c9
+
+Gate steps 1-6 passed. Steps 7-9 are judgment, recorded in shape.md: Docs, Version, the standards retrospective.
+exit=0

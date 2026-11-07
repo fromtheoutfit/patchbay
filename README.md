@@ -9,12 +9,31 @@ the same thing (`agent-os/product/mission.md`).
 
 ## Layout
 
-- `src/patchbay/`: the package, src layout, typed (`py.typed`). It exports `__version__`, read
-  from the installed package's metadata so `pyproject.toml` is the one place the version is
-  written, and nothing else yet. It is imported installed (`uv sync`): from a bare `src/` on
-  `sys.path` the import fails rather than invent a version.
-- `tests/`: pytest's tree, `unit/` for now, with no `conftest.py` until a fixture is shared; not a
-  package (no `__init__.py`), so one basename per test file across it, which mypy holds.
+- `src/patchbay/`: the package, src layout, typed (`py.typed`).
+  - `contracts.py`: the `Instrument` protocol every adapter implements, and the `Subscriber` its
+    events reach.
+  - `models.py`: the frozen, strict pydantic models that cross a boundary (`Quantity`,
+    `Parameter`, `Patch`, `Pattern`, `RenderRequest`, `RenderResult` and the rest), all built on
+    `PatchbayModel`, which takes data in JSON's form (as `json.loads`, YAML or TOML give it)
+    through `from_json_data`. `RenderRequest.samples` is the one count of a render's samples.
+  - `events.py`: the events (`ParameterChanged`, `PatchLoaded`, `RenderCompleted`) and the
+    synchronous, in-process `EventBus`, whose `subscribe` returns a `Subscription` that
+    `cancel()` ends.
+  - `errors.py`: `PatchbayError` and the errors under it; no built-in exception leaves a public
+    method.
+  - `testing/`: what an adapter's tests use: `CONTRACT_TESTS`, thirteen contract tests named
+    without a `test_` prefix, so pytest never collects one an adapter imports; the reference
+    `FakeInstrument`; and `RecordingSubscriber`.
+
+  `__init__.py` re-exports the first four, and `__version__`, read from the installed package's
+  metadata so `pyproject.toml` is the one place the version is written. The package is imported
+  installed (`uv sync`): from a bare `src/` on `sys.path` the import fails rather than invent a
+  version. The runtime dependencies are pydantic, numpy and pydantic-core, which pydantic brings
+  and which is declared since `errors.py` imports it, each a range in `[project] dependencies`.
+- `tests/`: pytest's tree, `unit/` for now, mirroring `src/` one test module per source module;
+  `unit/testing/conftest.py` holds the `bus` and `instrument` fixtures an adapter's own
+  `conftest.py` copies to run the contract tests. Not a package (no `__init__.py`), so one basename
+  per test file across it, which mypy holds.
 - `pyproject.toml`: the one configuration file. Every tool the gate runs is configured under
   `[tool.*]` there and nowhere else, with no `setup.py`, `setup.cfg`, `requirements*.txt`,
   `tox.ini`, `.flake8`, `mypy.ini`, `pytest.ini` or `.ruff.toml`. The `[tool.*]` sections (the rule
@@ -49,9 +68,10 @@ uv is the one tool this repository assumes, at 0.13.7: `pyproject.toml`'s `[tool
 required-version` pins it, so any other uv refuses every command that reads this project's
 settings (`uv sync` and `uv run` among them), and CI's setup-uv reads the same key to install it.
 `uv sync` reads `.python-version` (3.12), fetches that interpreter into uv's cache if it is not
-there, creates `.venv/` and installs the locked dev toolchain into it: ruff, mypy, pytest,
-hypothesis and pre-commit, each pinned exactly in `pyproject.toml`'s `[dependency-groups] dev` with
-the date it was published, and resolved in `uv.lock`. Nothing is installed outside the repository.
+there, creates `.venv/` and installs into it the package with its dependencies, pydantic,
+pydantic-core and numpy, and the locked dev toolchain: ruff, mypy, pytest, hypothesis and
+pre-commit, each pinned exactly in `pyproject.toml`'s `[dependency-groups] dev` with the date it
+was published. `uv.lock` resolves both. Nothing is installed outside the repository.
 Run a tool as `uv run --locked <tool>`, as the gate does.
 
 ## The gate
