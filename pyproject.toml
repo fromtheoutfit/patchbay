@@ -28,10 +28,13 @@ authors = [
 requires-python = ">=3.12"
 # Ranges, not the dev group's exact pins: an adapter installs core beside its own dependencies. The
 # floor is the version the gate ran, the ceiling the next major. Each is a Decision in the spec
-# that added it (agent-os/specs/2026-11-07-0806-contracts-models-events-errors-fake/shape.md).
+# that added it (agent-os/specs/2026-11-07-0806-contracts-models-events-errors-fake/shape.md;
+# pydantic-core in agent-os/specs/2026-11-07-1432-contracts-revision-after-pr-11-review/shape.md).
+# A package imported directly is declared, even when another dependency brings it in.
 dependencies = [
-    "numpy>=2.5.4,<3",     # the rendered audio: a typed (channels, samples) float32 array
-    "pydantic>=2.14.3,<3", # the frozen, validated models every contract crosses a boundary in
+    "numpy>=2.5.4,<3",          # the rendered audio: a typed (channels, samples) float32 array
+    "pydantic>=2.14.3,<3",      # the frozen, validated models every contract crosses a boundary in
+    "pydantic-core>=2.50.4,<3", # ErrorDetails, the refusal PatchbayValidationError carries
 ]
 
 [build-system]

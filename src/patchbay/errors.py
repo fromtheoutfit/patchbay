@@ -3,12 +3,15 @@
 `PatchbayError` is the root, so a caller catches every failure the package reports with one
 `except`. No built-in exception leaves a public method: a lookup that fails is a
 `ParameterNotFoundError`, not a `KeyError`, and pydantic's `ValidationError` (a `ValueError`) is
-raised as `PatchbayValidationError`.
+raised as `PatchbayValidationError` from a patchbay model's own entry points (`patchbay.models`
+names them). No field is named after a third party's method of another type: a validation error's
+refusals are its `details`, not pydantic's `errors()`.
 
 Each error takes its fields as arguments, keeps them as attributes and passes them to `Exception`,
 so `args` and pickling carry them, and builds its message from them in `__str__`. The fields are
 plain values: an id or a unit is a `str` (a `ParameterId` and a `Unit` each are one), so this
-module imports nothing else from the package and every other module can import it.
+module imports nothing else from the package and every other module can import it. It imports
+pydantic-core's `ErrorDetails`, which `[project] dependencies` declares.
 """
 
 from pydantic_core import ErrorDetails
@@ -98,33 +101,53 @@ class RenderFailedError(PatchbayError):
         return f"render failed: {self.reason}"
 
 
+class SubscriptionRejectedError(PatchbayError):
+    """A bus refused a subscription: a type that is not an event, or a subscriber not callable."""
+
+    def __init__(self, reason: str) -> None:
+        """Say why the subscription was refused."""
+        super().__init__(reason)
+        self.reason = reason
+
+    def __str__(self) -> str:
+        """Give the reason."""
+        return f"subscription rejected: {self.reason}"
+
+
 class SubscriberFailedError(PatchbayError):
     """One or more subscribers raised while an event was delivered; every subscriber still ran."""
 
-    def __init__(self, event_name: str, errors: tuple[Exception, ...]) -> None:
-        """Name the event and carry every subscriber's exception, in the order they were raised."""
-        super().__init__(event_name, errors)
+    def __init__(self, event_name: str, exceptions: tuple[Exception, ...]) -> None:
+        """Name the event and carry every subscriber's exception, in the order they were raised.
+
+        `exceptions` is the name `ExceptionGroup` gives the same thing.
+        """
+        super().__init__(event_name, exceptions)
         self.event_name = event_name
-        self.errors = errors
+        self.exceptions = exceptions
 
     def __str__(self) -> str:
         """Say which event, and what each failing subscriber raised."""
-        raised = "; ".join(f"{type(error).__name__}: {error}" for error in self.errors)
-        return f"{len(self.errors)} subscriber(s) failed on {self.event_name!r}: {raised}"
+        raised = "; ".join(f"{type(error).__name__}: {error}" for error in self.exceptions)
+        return f"{len(self.exceptions)} subscriber(s) failed on {self.event_name!r}: {raised}"
 
 
 class PatchbayValidationError(PatchbayError):
     """A model refused its input: pydantic's `ValidationError`, raised as the package's own."""
 
-    def __init__(self, errors: tuple[ErrorDetails, ...]) -> None:
-        """Carry pydantic's error details, one per refusal, each with its location and message."""
-        super().__init__(errors)
-        self.errors = errors
+    def __init__(self, details: tuple[ErrorDetails, ...]) -> None:
+        """Carry pydantic's error details, one per refusal, each with its location and message.
+
+        They are `details`, not `errors`: pydantic's `ValidationError.errors` is a method, and a
+        tuple of the same name would fail code ported from it with a `TypeError`.
+        """
+        super().__init__(details)
+        self.details = details
 
     def __str__(self) -> str:
         """List each refusal as `location: message`, the location dotted."""
         refusals = "; ".join(
-            f"{'.'.join(str(part) for part in error['loc']) or '(model)'}: {error['msg']}"
-            for error in self.errors
+            f"{'.'.join(str(part) for part in detail['loc']) or '(model)'}: {detail['msg']}"
+            for detail in self.details
         )
-        return f"{len(self.errors)} validation error(s): {refusals}"
+        return f"{len(self.details)} validation error(s): {refusals}"

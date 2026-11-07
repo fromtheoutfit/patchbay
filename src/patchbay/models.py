@@ -4,21 +4,33 @@ Every model derives from `PatchbayModel`, so every model is frozen, refuses a fi
 declare, refuses NaN and infinity, and validates strictly: the type is the contract, so "0.5" is
 not 0.5 and 1 is not True (an int is still a float, and a dict for a nested model is validated as
 strictly). `frozen=True` is written on the class line of each model, where mypy reads it, so mypy
-refuses an assignment and a subclass that leaves it out. A model whose input is refused raises
-`PatchbayValidationError`, never pydantic's `ValidationError`, from every entry point pydantic
-validates through: the constructor, `model_validate`, `model_validate_json`,
-`model_validate_strings`, and an assignment or deletion. `model_copy(update=...)` validates
-nothing, as pydantic documents, and is not a way in.
+refuses an assignment and a subclass that leaves it out.
+
+A model whose input is refused raises `PatchbayValidationError`, never pydantic's
+`ValidationError`, from each of its own entry points: the constructor, `model_validate`,
+`model_validate_json`, `model_validate_strings`, `from_json_data`, and an assignment or deletion.
+Validation pydantic runs on behalf of something else is that thing's, and raises pydantic's
+`ValidationError`: a `TypeAdapter` over a model, or a plain `BaseModel` with a patchbay model as a
+field. A model that derives from `PatchbayModel` has the promise, which is why an adapter's own
+models derive from it. `model_copy(update=...)` validates nothing, as pydantic documents, and is
+not a way in.
+
+Python input is Python's types, strictly. Data in JSON's form, as `json.loads`, a YAML or a TOML
+parser gives it, goes through `from_json_data`, which validates it by pydantic's JSON rules: an
+enum by its value, bytes as base64, a time as an ISO string, an array for a tuple.
 
 Containers inside a frozen model are read-only too: a `Patch`'s mappings are `MappingProxyType`s
 and a `RenderResult`'s array is marked unwriteable. Neither model is hashable.
 """
 
-from collections.abc import Iterator, Mapping
+import functools
+import json
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from enum import StrEnum
+from fractions import Fraction
 from types import MappingProxyType
-from typing import ClassVar, Literal, NewType, Self
+from typing import TYPE_CHECKING, Annotated, ClassVar, Literal, NewType, Self
 
 import numpy as np
 from numpy.typing import NDArray
@@ -32,7 +44,6 @@ from pydantic import (
     field_validator,
     model_validator,
 )
-from pydantic.config import ExtraValues
 
 from patchbay.errors import (
     PatchbayError,
@@ -40,6 +51,9 @@ from patchbay.errors import (
     UnitMismatchError,
     ValueOutOfRangeError,
 )
+
+if TYPE_CHECKING:
+    from pydantic_core import ErrorDetails
 
 ParameterId = NewType("ParameterId", str)
 """The key an instrument's host knows a parameter by."""
@@ -70,6 +84,21 @@ def _refusals() -> Iterator[None]:
         raise PatchbayValidationError(tuple(error.errors(include_url=False))) from error
 
 
+def _refusing[**P, R](validate: Callable[P, R]) -> Callable[P, R]:
+    """Wrap one of pydantic's validating methods so a refusal is raised as PatchbayValidationError.
+
+    The wrapper takes whatever the method takes and forwards it whole, so it never restates the
+    method's signature.
+    """
+
+    @functools.wraps(validate)
+    def refusing(*args: P.args, **kwargs: P.kwargs) -> R:
+        with _refusals():
+            return validate(*args, **kwargs)
+
+    return refusing
+
+
 class PatchbayModel(BaseModel, frozen=True):
     """The base of every patchbay model: frozen, closed, finite, strict, refusing as patchbay.
 
@@ -86,82 +115,43 @@ class PatchbayModel(BaseModel, frozen=True):
     # pydantic calls a model's own __init__ to build a nested model, with the parsed input in
     # Python mode: a JSON "ratio" would meet strict's refusal of a str for Unit, and a nested
     # refusal would surface without its path. This __init__ validates exactly what BaseModel's
-    # does, so it carries BaseModel's marker, and pydantic validates nested models itself
-    # (verification/probes.txt, models_init.py).
+    # does, so it carries BaseModel's marker, and pydantic validates nested models itself (the
+    # contracts spec's verification/probes.txt, models_init.py).
     __init__.__pydantic_base_init__ = True  # type: ignore[attr-defined]
 
-    # The three classmethods take pydantic's signatures whole, so mypy holds each to the one it
-    # overrides; their length is pydantic's, hence PLR0913 on each.
-    @classmethod
-    def model_validate(  # noqa: PLR0913
-        cls,
-        obj: object,
-        *,
-        strict: bool | None = None,
-        extra: ExtraValues | None = None,
-        from_attributes: bool | None = None,
-        context: object | None = None,
-        by_alias: bool | None = None,
-        by_name: bool | None = None,
-    ) -> Self:
-        """Validate a Python object, raising PatchbayValidationError for any refusal."""
-        with _refusals():
-            return super().model_validate(
-                obj,
-                strict=strict,
-                extra=extra,
-                from_attributes=from_attributes,
-                context=context,
-                by_alias=by_alias,
-                by_name=by_name,
-            )
+    # pydantic's three validating classmethods, wrapped rather than restated. mypy does not read
+    # this block, so it checks every call against pydantic's own signatures (Self-typed, each
+    # keyword by name); at runtime each wrapper forwards what it is given, a keyword a later
+    # pydantic adds among it, and raises a refusal as PatchbayValidationError (the PR 11
+    # revision's verification/probes.txt, footing.py A and footing_typing.py). model_validate_json
+    # refuses bad JSON the same way; model_validate_strings parses "0.5" as a float even under
+    # strict, parsing strings being its purpose.
+    if not TYPE_CHECKING:
+        model_validate = classmethod(_refusing(BaseModel.model_validate.__func__))
+        model_validate_json = classmethod(_refusing(BaseModel.model_validate_json.__func__))
+        model_validate_strings = classmethod(_refusing(BaseModel.model_validate_strings.__func__))
 
     @classmethod
-    def model_validate_json(  # noqa: PLR0913
-        cls,
-        json_data: str | bytes | bytearray,
-        *,
-        strict: bool | None = None,
-        extra: ExtraValues | None = None,
-        context: object | None = None,
-        by_alias: bool | None = None,
-        by_name: bool | None = None,
-    ) -> Self:
-        """Validate JSON text, raising PatchbayValidationError for any refusal, bad JSON too."""
-        with _refusals():
-            return super().model_validate_json(
-                json_data,
-                strict=strict,
-                extra=extra,
-                context=context,
-                by_alias=by_alias,
-                by_name=by_name,
-            )
+    def from_json_data(cls, data: object, /) -> Self:
+        """Validate data in JSON's form, as `json.loads`, a YAML or a TOML parser gives it.
 
-    @classmethod
-    def model_validate_strings(  # noqa: PLR0913
-        cls,
-        obj: object,
-        *,
-        strict: bool | None = None,
-        extra: ExtraValues | None = None,
-        context: object | None = None,
-        by_alias: bool | None = None,
-        by_name: bool | None = None,
-    ) -> Self:
-        """Validate string input, raising PatchbayValidationError for any refusal.
-
-        Parsing strings is this method's purpose, so "0.5" is a float here even under strict.
+        The data meets pydantic's JSON rules, exactly as `model_validate_json` holds its text to
+        them: an enum by its value, bytes as base64 where the model reads them so, a time as an
+        ISO string, an array for a tuple. Strict still holds, so "0.5" is not 0.5 and 1 is not
+        True. A value JSON cannot hold, a set or a datetime or a circular reference, is refused
+        too; every refusal is PatchbayValidationError.
         """
-        with _refusals():
-            return super().model_validate_strings(
-                obj,
-                strict=strict,
-                extra=extra,
-                context=context,
-                by_alias=by_alias,
-                by_name=by_name,
-            )
+        try:
+            text = json.dumps(data)
+        except (TypeError, ValueError) as error:
+            detail: ErrorDetails = {
+                "type": "json_data",
+                "loc": (),
+                "msg": f"Input should be data JSON can hold: {error}",
+                "input": data,
+            }
+            raise PatchbayValidationError((detail,)) from error
+        return cls.model_validate_json(text)
 
     def __setattr__(self, name: str, value: object) -> None:
         """Refuse the assignment, the model being frozen, as PatchbayValidationError."""
@@ -266,7 +256,7 @@ class Patch(PatchbayModel, frozen=True):
     model_config = ConfigDict(ser_json_bytes="base64", val_json_bytes="base64")
 
     instrument: str = Field(min_length=1)
-    values: Mapping[ParameterId, Quantity]
+    values: Mapping[Annotated[ParameterId, Field(min_length=1)], Quantity]
     opaque: Mapping[str, bytes] = Field(default_factory=dict, validate_default=True)
 
     # Unhashable, said the way Python says it: pydantic's frozen hash would raise on a mapping.
@@ -313,11 +303,43 @@ class Pattern(PatchbayModel, frozen=True):
         return self
 
 
+_SECONDS_PER_MINUTE = 60
+
+
+def _seconds(pattern: Pattern, beats: Fraction) -> Fraction:
+    """Return how long `beats` of the pattern last at its tempo, exactly."""
+    return beats * _SECONDS_PER_MINUTE / Fraction(pattern.tempo_bpm)
+
+
 class RenderRequest(PatchbayModel, frozen=True):
-    """How to render a pattern: at what sample rate, and how long to let it ring after the end."""
+    """How to render a pattern: at what sample rate, and how long to let it ring after the end.
+
+    `samples` and `sample_at` are the one rule for where a render's samples fall, each computed in
+    exact rational arithmetic and rounded half to even, so each is an int for every valid pattern
+    and request: never an overflow and never infinite, however long the render.
+    """
 
     sample_rate: int = Field(gt=0)
     tail_seconds: float = Field(ge=0)
+
+    def samples(self, pattern: Pattern, /) -> int:
+        """Return how many samples rendering `pattern` as this request asks gives.
+
+        `round((bars * beats_per_bar * 60 / tempo_bpm + tail_seconds) * sample_rate)`. Every
+        instrument's render is this many samples long (`Instrument.render`); one that cannot
+        render that many raises RenderFailedError.
+        """
+        beats = Fraction(pattern.bars * pattern.beats_per_bar)
+        seconds = _seconds(pattern, beats) + Fraction(self.tail_seconds)
+        return round(seconds * self.sample_rate)
+
+    def sample_at(self, pattern: Pattern, beat: float, /) -> int:
+        """Return the sample `beat` of `pattern` falls on, counting from the pattern's start.
+
+        `round(beat * 60 / tempo_bpm * sample_rate)`: where an instrument starts and ends a note,
+        by the rule that fixes the render's length.
+        """
+        return round(_seconds(pattern, Fraction(beat)) * self.sample_rate)
 
 
 _CHANNELS_BY_SAMPLES = 2  # the dimensions of a rendered buffer: (channels, samples)
@@ -329,8 +351,9 @@ class RenderResult(PatchbayModel, frozen=True):
     `elapsed_seconds` is wall-clock time, measured by the instrument around the render; the
     audio's own length is `audio_seconds`. A result with warnings is degraded but usable; an
     instrument with nothing usable raises RenderFailedError instead. The array is a read-only
-    copy. Two results are equal when their arrays and every other field are; neither is hashable,
-    and pydantic's JSON form of one is not offered (the array has none).
+    copy, and every sample in it is finite. Two results are equal when their arrays and every
+    other field are; neither is hashable, and pydantic's JSON form of one is not offered (the
+    array has none).
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -345,8 +368,11 @@ class RenderResult(PatchbayModel, frozen=True):
 
     @property
     def audio_seconds(self) -> float:
-        """The audio's length: its samples over its sample rate."""
-        return float(self.audio.shape[1]) / self.sample_rate
+        """The audio's length: its samples over its sample rate.
+
+        An int over an int, which Python divides exactly rounded, so no rate overflows it.
+        """
+        return int(self.audio.shape[1]) / self.sample_rate
 
     @field_validator("audio", mode="after")
     @classmethod
@@ -356,6 +382,9 @@ class RenderResult(PatchbayModel, frozen=True):
             raise ValueError(msg)
         if audio.ndim != _CHANNELS_BY_SAMPLES or audio.shape[0] < 1:
             msg = f"audio is (channels, samples) with one channel or more, given {audio.shape}"
+            raise ValueError(msg)
+        if not np.isfinite(audio).all():
+            msg = "audio is finite: no sample is NaN or infinite"
             raise ValueError(msg)
         locked = audio.copy()
         locked.flags.writeable = False

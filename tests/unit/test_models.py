@@ -1,14 +1,19 @@
 """The models validate on the model, refuse as patchbay, stay frozen inside, and round-trip."""
 
+import inspect
+import json
 import math
+import sys
 from collections.abc import Callable
+from datetime import UTC, datetime
+from fractions import Fraction
 from types import MappingProxyType
 
 import numpy as np
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
-from pydantic import ValidationError
+from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from patchbay.errors import PatchbayValidationError, UnitMismatchError, ValueOutOfRangeError
 from patchbay.models import (
@@ -16,6 +21,7 @@ from patchbay.models import (
     Parameter,
     ParameterId,
     Patch,
+    PatchbayModel,
     Pattern,
     PresetKey,
     Quantity,
@@ -99,6 +105,7 @@ _ENTRY_POINTS: tuple[tuple[str, Callable[[], object]], ...] = (
     ),
     ("model_validate_json, bad JSON", lambda: Quantity.model_validate_json("{")),
     ("model_validate_strings", lambda: Quantity.model_validate_strings({"value": "x"})),
+    ("from_json_data", lambda: Quantity.from_json_data({"value": 1.5, "unit": "ratio"})),
     ("assignment", lambda: setattr(_QUANTITY, "value", 0.25)),
     ("deletion", lambda: delattr(_QUANTITY, "value")),
     (
@@ -124,7 +131,7 @@ def test_every_entry_point_refuses_with_patchbay_validation_error(
         refuse()
     assert type(caught.value) is PatchbayValidationError
     assert isinstance(caught.value.__cause__, ValidationError)
-    assert caught.value.errors
+    assert caught.value.details
 
 
 def test_a_frozen_model_is_unchanged_by_a_refused_assignment() -> None:
@@ -173,6 +180,114 @@ def test_strict_admits_an_int_for_a_float_and_json_forms() -> None:
         ' "velocity": 100, "start_beats": 0, "duration_beats": 1, "channel": 0}]}'
     )
     assert pattern.notes == (_A_NOTE,)
+
+
+@pytest.mark.parametrize(
+    "name", ["model_validate", "model_validate_json", "model_validate_strings"]
+)
+def test_the_validating_classmethods_keep_pydantic_s_signatures(name: str) -> None:
+    """Each is pydantic's own, wrapped rather than restated, so every keyword it takes passes.
+
+    A keyword a later pydantic adds reaches pydantic too: nothing here lists them.
+    """
+    assert inspect.signature(getattr(Quantity, name)) == inspect.signature(getattr(BaseModel, name))
+
+
+def test_a_keyword_reaches_pydantic_through_the_wrapper() -> None:
+    """strict=False is pydantic's to read: through the wrapper, "0.5" is then a float."""
+    lax = Quantity.model_validate({"value": "0.5", "unit": Unit.hz}, strict=False)
+    assert lax == Quantity(value=0.5, unit=Unit.hz)
+
+
+class _PlainHolder(BaseModel):
+    quantity: Quantity
+
+
+class _PatchbayHolder(PatchbayModel, frozen=True):
+    quantity: Quantity
+
+
+_A_BAD_QUANTITY: dict[str, object] = {"value": "x", "unit": Unit.hz}
+
+
+@pytest.mark.parametrize(
+    "refuse",
+    [
+        lambda: TypeAdapter(list[Quantity]).validate_python([_A_BAD_QUANTITY]),
+        lambda: _PlainHolder.model_validate({"quantity": _A_BAD_QUANTITY}),
+    ],
+    ids=["a TypeAdapter", "a plain BaseModel holding a Quantity"],
+)
+def test_validation_run_for_something_else_raises_pydantic_s_error(
+    refuse: Callable[[], object],
+) -> None:
+    """The promise is a patchbay model's own entry points; pydantic validating for another is not.
+
+    pydantic validates a nested model inside the outer validator, so the outer's error is
+    pydantic's, as pydantic documents. This test holds the boundary models.py states.
+    """
+    with pytest.raises(ValidationError):
+        refuse()
+
+
+def test_a_model_on_patchbay_model_refuses_as_patchbay_at_any_depth() -> None:
+    """An adapter's own model, derived from PatchbayModel, has the promise for its fields too."""
+    with pytest.raises(PatchbayValidationError, match=r"quantity\.value"):
+        _PatchbayHolder.model_validate({"quantity": _A_BAD_QUANTITY})
+
+
+# --- from_json_data: JSON's forms, from Python data -----------------------------------------------
+
+
+def test_from_json_data_takes_json_s_own_forms() -> None:
+    """An enum by its value, an array for a tuple, an int for a float, all as json.loads gives."""
+    data = json.loads(
+        '{"tempo_bpm": 120, "bars": 1, "beats_per_bar": 4, "notes": [{"pitch": 60,'
+        ' "velocity": 100, "start_beats": 0, "duration_beats": 1, "channel": 0}]}'
+    )
+    assert Pattern.from_json_data(data).notes == (_A_NOTE,)
+    assert Quantity.from_json_data({"value": 1, "unit": "hz"}) == Quantity(value=1.0, unit=Unit.hz)
+    with pytest.raises(PatchbayValidationError):
+        Pattern.model_validate(data)
+
+
+@pytest.mark.parametrize(
+    ("model", "data"),
+    [
+        (Quantity, {"value": "0.5", "unit": "hz"}),
+        (Note, {**_NOTE, "pitch": True}),
+        (Note, {**_NOTE, "pitch": 60.5}),
+        (Quantity, {"value": math.nan, "unit": "hz"}),
+        (Quantity, {"value": 0.5, "unit": "kelvin"}),
+    ],
+    ids=["a str for a float", "a bool for an int", "a fraction for an int", "NaN", "no such unit"],
+)
+def test_from_json_data_is_still_strict(model: type[PatchbayModel], data: object) -> None:
+    """JSON's forms are admitted and nothing else: no value is converted from another type."""
+    with pytest.raises(PatchbayValidationError) as caught:
+        model.from_json_data(data)
+    assert isinstance(caught.value.__cause__, ValidationError)
+
+
+_CIRCULAR: list[object] = []
+_CIRCULAR.append(_CIRCULAR)
+
+
+@pytest.mark.parametrize(
+    ("data", "cause"),
+    [
+        ({"value": 0.5, "unit": "hz", "extra": {1, 2}}, TypeError),
+        ({"value": 0.5, "unit": "hz", "at": datetime.now(UTC)}, TypeError),
+        (_CIRCULAR, ValueError),
+    ],
+    ids=["a set", "a datetime", "a circular reference"],
+)
+def test_from_json_data_refuses_data_json_cannot_hold(data: object, cause: type) -> None:
+    """A value JSON has no form for is refused as patchbay, chained from json's own error."""
+    with pytest.raises(PatchbayValidationError, match="data JSON can hold") as caught:
+        Quantity.from_json_data(data)
+    assert type(caught.value.__cause__) is cause
+    assert [detail["type"] for detail in caught.value.details] == ["json_data"]
 
 
 # --- Quantity -----------------------------------------------------------------------------------
@@ -318,7 +433,7 @@ _QUANTITIES = st.one_of(
 
 @given(
     instrument=st.text(min_size=1),
-    values=st.dictionaries(st.text().map(ParameterId), _QUANTITIES),
+    values=st.dictionaries(st.text(min_size=1).map(ParameterId), _QUANTITIES),
     opaque=st.dictionaries(st.text(), st.binary()),
 )
 def test_a_patch_round_trips_through_json_byte_for_byte(
@@ -332,7 +447,30 @@ def test_a_patch_round_trips_through_json_byte_for_byte(
 
 
 @given(
-    values=st.dictionaries(st.text().map(ParameterId), _QUANTITIES, min_size=2),
+    instrument=st.text(min_size=1),
+    values=st.dictionaries(st.text(min_size=1).map(ParameterId), _QUANTITIES),
+    opaque=st.dictionaries(st.text(), st.binary()),
+)
+def test_a_patch_comes_back_from_its_json_data(
+    instrument: str, values: dict[ParameterId, Quantity], opaque: dict[str, bytes]
+) -> None:
+    """json.loads of a patch's JSON is data in JSON's form, and from_json_data takes it back whole.
+
+    Its units are strings and its opaque bytes base64, which model_validate's strict Python input
+    refuses; from_json_data reads them as the JSON they are.
+    """
+    patch = Patch(instrument=instrument, values=values, opaque=opaque)
+    data = json.loads(patch.model_dump_json())
+    restored = Patch.from_json_data(data)
+    assert restored == patch
+    assert dict(restored.opaque) == opaque
+    if values or opaque:
+        with pytest.raises(PatchbayValidationError):
+            Patch.model_validate(data)
+
+
+@given(
+    values=st.dictionaries(st.text(min_size=1).map(ParameterId), _QUANTITIES, min_size=2),
     opaque=st.dictionaries(st.text(), st.binary(), min_size=2),
 )
 def test_a_patch_has_one_json_whatever_order_it_was_built_in(
@@ -372,6 +510,12 @@ def test_a_patch_names_its_instrument() -> None:
     """An empty instrument name is refused."""
     with pytest.raises(PatchbayValidationError, match="at least 1 character"):
         Patch(instrument="", values={})
+
+
+def test_a_patch_s_parameter_ids_are_not_empty() -> None:
+    """A value's key is a parameter id, and a parameter id has a character, as Parameter.id does."""
+    with pytest.raises(PatchbayValidationError, match=r"values\.\.\[key\]: String should have"):
+        Patch(instrument="fake", values={ParameterId(""): _QUANTITY})
 
 
 # --- Note and Pattern ---------------------------------------------------------------------------
@@ -442,6 +586,86 @@ def test_a_render_request_is_a_positive_rate_and_a_tail(field: str, value: float
         RenderRequest.model_validate({**fields, field: value})
 
 
+def _length(tempo_bpm: float, bars: int, beats_per_bar: int) -> Pattern:
+    return Pattern(tempo_bpm=tempo_bpm, bars=bars, beats_per_bar=beats_per_bar, notes=())
+
+
+def test_samples_is_the_pattern_and_its_tail_at_the_rate() -> None:
+    """Four beats at 120 bpm are two seconds; with a quarter-second tail at 48 kHz, 108000."""
+    request = RenderRequest(sample_rate=48000, tail_seconds=0.25)
+    assert request.samples(_length(120.0, 1, 4)) == (2 + 0.25) * 48000
+
+
+def test_samples_rounds_half_to_even() -> None:
+    """Half a second at 1, 3 and 5 Hz is 0.5, 1.5 and 2.5 samples: 0, 2 and 2."""
+    half_second = _length(120.0, 1, 1)
+    rates = (1, 3, 5)
+    samples = [RenderRequest(sample_rate=r, tail_seconds=0.0).samples(half_second) for r in rates]
+    assert samples == [0, 2, 2]
+
+
+@given(
+    tempo=st.floats(20.0, 999.0),
+    beats_per_bar=st.integers(1, 16),
+    rate=st.integers(8000, 192000),
+    beat=st.floats(0.0, 16.0),
+)
+def test_sample_at_places_a_beat_by_the_rule_that_fixes_the_length(
+    tempo: float, beats_per_bar: int, rate: int, beat: float
+) -> None:
+    """Beat 0 is sample 0; the pattern's last beat, with no tail, is its length; between, exact."""
+    pattern = _length(tempo, 1, beats_per_bar)
+    request = RenderRequest(sample_rate=rate, tail_seconds=0.0)
+    assert request.sample_at(pattern, 0.0) == 0
+    assert request.sample_at(pattern, float(beats_per_bar)) == request.samples(pattern)
+    assert request.sample_at(pattern, beat) == round(Fraction(beat) * 60 / Fraction(tempo) * rate)
+
+
+def test_sample_at_is_an_int_at_any_tempo() -> None:
+    """Exact like samples: a beat at the slowest tempo is a very large int, not an overflow."""
+    pattern = _length(sys.float_info.min, 1, 4)
+    assert type(RenderRequest(sample_rate=48000, tail_seconds=0.0).sample_at(pattern, 1.0)) is int
+
+
+@given(
+    tempo=st.floats(20.0, 999.0),
+    bars=st.integers(1, 64),
+    beats_per_bar=st.integers(1, 16),
+    tail=st.floats(0.0, 60.0),
+    rate=st.integers(8000, 192000),
+)
+def test_samples_agrees_with_the_float_formula_on_ordinary_requests(
+    tempo: float, bars: int, beats_per_bar: int, tail: float, rate: int
+) -> None:
+    """Within a sample of the float formula, and exactly the rational one rounded."""
+    samples = RenderRequest(sample_rate=rate, tail_seconds=tail).samples(
+        _length(tempo, bars, beats_per_bar)
+    )
+    exact = (Fraction(bars * beats_per_bar * 60) / Fraction(tempo) + Fraction(tail)) * rate
+    assert samples == round(exact)
+    assert abs(samples - (bars * beats_per_bar * 60 / tempo + tail) * rate) <= 1
+
+
+@pytest.mark.parametrize(
+    ("pattern", "request_"),
+    [
+        (_length(1e-300, 1, 4), RenderRequest(sample_rate=48000, tail_seconds=0.0)),
+        (_length(sys.float_info.min, 1, 1), RenderRequest(sample_rate=48000, tail_seconds=0.0)),
+        (_length(120.0, 1, 4), RenderRequest(sample_rate=48000, tail_seconds=1e308)),
+        (_length(120.0, 1, 4), RenderRequest(sample_rate=10**400, tail_seconds=0.0)),
+        (_length(120.0, 10**400, 4), RenderRequest(sample_rate=48000, tail_seconds=0.0)),
+    ],
+    ids=["tempo 1e-300", "tempo float min", "tail 1e308", "rate 10**400", "bars 10**400"],
+)
+def test_samples_is_an_int_however_long_the_render(
+    pattern: Pattern, request_: RenderRequest
+) -> None:
+    """Exact arithmetic: no overflow and no infinity, only a very large int."""
+    samples = request_.samples(pattern)
+    assert type(samples) is int
+    assert samples > 10**300
+
+
 def _result(audio: np.ndarray[tuple[int, ...], np.dtype[np.float32]]) -> RenderResult:
     return RenderResult(audio=audio, sample_rate=8, elapsed_seconds=0.25)
 
@@ -473,6 +697,22 @@ def test_a_render_result_refuses_audio_of_another_shape(audio: object) -> None:
     """Audio is float32, (channels, samples), with one channel or more."""
     with pytest.raises(PatchbayValidationError, match="audio"):
         RenderResult.model_validate({"audio": audio, "sample_rate": 8, "elapsed_seconds": 0.0})
+
+
+@pytest.mark.parametrize("sample", [math.nan, math.inf, -math.inf], ids=["NaN", "inf", "-inf"])
+def test_a_render_result_refuses_audio_that_is_not_finite(sample: float) -> None:
+    """Every sample is a number, so a result always equals itself."""
+    audio = np.zeros((1, 8), dtype=np.float32)
+    audio[0, 5] = sample
+    with pytest.raises(PatchbayValidationError, match="audio is finite"):
+        _result(audio)
+
+
+def test_audio_seconds_holds_at_any_rate() -> None:
+    """An int over an int: at a rate no float holds, the length is 0.0, not an OverflowError."""
+    audio = np.zeros((1, 8), dtype=np.float32)
+    result = RenderResult(audio=audio, sample_rate=10**400, elapsed_seconds=0.0)
+    assert result.audio_seconds == 0.0
 
 
 def test_render_results_compare_by_their_arrays() -> None:

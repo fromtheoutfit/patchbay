@@ -3,13 +3,18 @@
 The suite proves the fake and the fake proves the suite. Every contract test runs here as an
 adapter's would, parametrized over CONTRACT_TESTS with the conftest's fixtures. Each one also
 runs against a FakeInstrument that breaks exactly the property it checks, and must raise
-ContractViolationError naming itself: a test that cannot fail proves nothing.
+ContractViolationError naming itself: a test that cannot fail proves nothing. A fake with
+parameters at the largest bounds a float has passes every one, so no test fails a correct
+instrument at its edges.
 """
+
+import sys
 
 import numpy as np
 import pytest
 
 from patchbay.contracts import Instrument
+from patchbay.errors import PatchbayError, PatchRejectedError
 from patchbay.events import EventBus, ParameterChanged, RenderCompleted
 from patchbay.models import (
     Parameter,
@@ -19,10 +24,11 @@ from patchbay.models import (
     Quantity,
     RenderRequest,
     RenderResult,
+    Unit,
 )
 from patchbay.testing import CONTRACT_TESTS, ContractTest, ContractViolationError, FakeInstrument
 from patchbay.testing import contract_tests as contract
-from patchbay.testing.fake import PARAMETERS
+from patchbay.testing.fake import MAX_SAMPLES, PARAMETERS
 
 
 @pytest.mark.parametrize("contract_test", CONTRACT_TESTS, ids=lambda test: test.__name__)
@@ -74,6 +80,20 @@ class _LoadsAnyonesPatch(FakeInstrument):
         super().load_patch(Patch(instrument=self.name, values=patch.values, opaque=patch.opaque))
 
 
+class _LoadsUntilARefusal(FakeInstrument):
+    """Checks the patch's instrument, then sets its values one at a time, stopping at a refusal."""
+
+    def load_patch(self, patch: Patch, /) -> None:
+        if patch.instrument != self.name:
+            msg = "another instrument's patch"
+            raise PatchRejectedError(msg)
+        try:
+            for parameter_id, value in patch.values.items():
+                self.set(parameter_id, value)
+        except PatchbayError as error:
+            raise PatchRejectedError(str(error)) from error
+
+
 class _RendersASampleShort(FakeInstrument):
     def render(self, pattern: Pattern, request: RenderRequest, /) -> RenderResult:
         result = super().render(pattern, request)
@@ -82,6 +102,16 @@ class _RendersASampleShort(FakeInstrument):
             sample_rate=result.sample_rate,
             elapsed_seconds=result.elapsed_seconds,
         )
+
+
+class _RendersAnyLength(FakeInstrument):
+    """Renders one silent sample for a render too long to make, instead of refusing it."""
+
+    def render(self, pattern: Pattern, request: RenderRequest, /) -> RenderResult:
+        if request.samples(pattern) > MAX_SAMPLES:
+            silence = np.zeros((1, 1), dtype=np.float32)
+            return RenderResult(audio=silence, sample_rate=request.sample_rate, elapsed_seconds=0)
+        return super().render(pattern, request)
 
 
 class _PublishesASetTwice(FakeInstrument):
@@ -140,50 +170,60 @@ class _PublishesTheWrongTime(FakeInstrument):
 
 # Each contract test, the fake broken its way, and the expectation the test must say it missed.
 _BROKEN: tuple[tuple[ContractTest, type[FakeInstrument], str], ...] = (
-    (contract.test_parameters_are_unique_and_typed, _RepeatsAParameter, "every parameter id once"),
+    (contract.parameters_are_unique_and_typed, _RepeatsAParameter, "every parameter id once"),
     (
-        contract.test_get_after_set_returns_what_was_set,
+        contract.get_after_set_returns_what_was_set,
         _ForgetsWhatWasSet,
         "level at Quantity(value=1.0",
     ),
     (
-        contract.test_set_with_the_wrong_unit_raises_unit_mismatch,
+        contract.set_with_the_wrong_unit_raises_unit_mismatch,
         _TakesAnyUnit,
         "UnitMismatchError to be raised",
     ),
     (
-        contract.test_an_unknown_id_raises_parameter_not_found,
+        contract.an_unknown_id_raises_parameter_not_found,
         _AnswersForAnyId,
         "ParameterNotFoundError to be raised",
     ),
     (
-        contract.test_a_value_out_of_range_raises_value_out_of_range,
+        contract.a_value_out_of_range_raises_value_out_of_range,
         _ClampsIntoRange,
         "ValueOutOfRangeError to be raised",
     ),
-    (contract.test_patch_round_trips_through_load_patch, _IgnoresALoadedPatch, "the patch loaded"),
+    (contract.patch_round_trips_through_load_patch, _IgnoresALoadedPatch, "the patch loaded"),
     (
-        contract.test_a_rejected_patch_changes_nothing,
+        contract.a_rejected_patch_changes_nothing,
         _LoadsAnyonesPatch,
         "PatchRejectedError to be raised",
     ),
     (
-        contract.test_render_returns_the_declared_shape_and_sample_rate,
+        contract.a_patch_refused_part_way_changes_nothing,
+        _LoadsUntilARefusal,
+        "the instrument unchanged by a patch refused at waveform",
+    ),
+    (
+        contract.render_returns_the_declared_shape_and_sample_rate,
         _RendersASampleShort,
         "108000 samples",
     ),
     (
-        contract.test_set_emits_parameter_changed_once,
+        contract.an_impossible_render_raises_render_failed,
+        _RendersAnyLength,
+        "RenderFailedError to be raised",
+    ),
+    (
+        contract.set_emits_parameter_changed_once,
         _PublishesASetTwice,
         "one ParameterChanged and no other event",
     ),
     (
-        contract.test_load_patch_emits_patch_loaded_once,
+        contract.load_patch_emits_patch_loaded_once,
         _PublishesChangesOnLoad,
         "one PatchLoaded and no other event",
     ),
     (
-        contract.test_render_emits_render_completed_once,
+        contract.render_emits_render_completed_once,
         _PublishesTheWrongTime,
         "the name, and the result's times and warnings",
     ),
@@ -207,6 +247,55 @@ def test_each_contract_test_catches_its_broken_fake(
         contract_test(broken(bus), bus)
     assert caught.value.test == contract_test.__name__
     assert caught.value.expected.startswith(expected)
+
+
+# --- a correct instrument at the edges of a float ------------------------------------------------
+
+
+class _WideRange(FakeInstrument):
+    """The fake with two more parameters: one up to 2**53, one over every finite float."""
+
+    def parameters(self) -> tuple[Parameter, ...]:
+        largest = sys.float_info.max
+        return (
+            *PARAMETERS,
+            Parameter(
+                id=ParameterId("far"),
+                label="Far",
+                kind="continuous",
+                unit=Unit.hz,
+                minimum=0.0,
+                maximum=2.0**53,
+                default=Quantity(value=0.0, unit=Unit.hz),
+            ),
+            Parameter(
+                id=ParameterId("widest"),
+                label="Widest",
+                kind="continuous",
+                unit=Unit.db,
+                minimum=-largest,
+                maximum=largest,
+                default=Quantity(value=0.0, unit=Unit.db),
+            ),
+        )
+
+
+@pytest.mark.parametrize("contract_test", CONTRACT_TESTS, ids=lambda test: test.__name__)
+def test_a_correct_instrument_with_the_widest_bounds_passes(contract_test: ContractTest) -> None:
+    """At 2**53, bound + 1.0 is the bound, and past the largest float there is none to give.
+
+    Both broke the out-of-range test for a correct instrument before it took the next float past
+    each bound (the PR 11 review's finding 6); the widened fake reads its parameters through
+    parameters(), so the extra two are set, patched and checked like the rest.
+    """
+    bus = EventBus()
+    contract_test(_WideRange(bus), bus)
+
+
+def test_the_contract_tests_are_never_collected_by_pytest() -> None:
+    """No name starts with test_, so one an adapter imports by name runs once, from the tuple."""
+    assert not [test.__name__ for test in CONTRACT_TESTS if test.__name__.startswith("test")]
+    assert not [name for name in vars(contract) if name.startswith("test")]
 
 
 def test_a_contract_violation_is_an_assertion_error_with_fields() -> None:

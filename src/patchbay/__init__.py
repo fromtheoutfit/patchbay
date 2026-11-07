@@ -2,9 +2,10 @@
 
 The package re-exports what an adapter and a script use, and nothing else lives here: the
 Instrument protocol and the Subscriber its events reach (`patchbay.contracts`), the models that
-cross a boundary (`patchbay.models`), the events and their bus (`patchbay.events`) and the errors
-(`patchbay.errors`). What an adapter's tests use, the contract tests and FakeInstrument among it,
-is `patchbay.testing`, imported by name and not re-exported here.
+cross a boundary (`patchbay.models`), the events, their bus and its subscriptions
+(`patchbay.events`) and the errors (`patchbay.errors`). What an adapter's tests use, the contract
+tests and FakeInstrument among it, is `patchbay.testing`, imported by name and not re-exported
+here.
 
 `__version__` is the one in pyproject.toml, read from the installed distribution's metadata so
 there is one place it is written. Import the package installed (`uv sync`): from a bare src/ on
@@ -22,10 +23,18 @@ from patchbay.errors import (
     PatchRejectedError,
     RenderFailedError,
     SubscriberFailedError,
+    SubscriptionRejectedError,
     UnitMismatchError,
     ValueOutOfRangeError,
 )
-from patchbay.events import Event, EventBus, ParameterChanged, PatchLoaded, RenderCompleted
+from patchbay.events import (
+    Event,
+    EventBus,
+    ParameterChanged,
+    PatchLoaded,
+    RenderCompleted,
+    Subscription,
+)
 from patchbay.models import (
     Note,
     Parameter,
@@ -66,6 +75,8 @@ __all__ = [
     "RenderResult",
     "Subscriber",
     "SubscriberFailedError",
+    "Subscription",
+    "SubscriptionRejectedError",
     "Unit",
     "UnitMismatchError",
     "ValueOutOfRangeError",

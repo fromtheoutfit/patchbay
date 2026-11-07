@@ -7,8 +7,14 @@ silence over the decay parameter's seconds, and cut at the note's end. The other
 stored, reported and patched like any other, and change nothing in the sound.
 
 Summed notes that pass full scale are clipped to it, and the result says so in its warnings: a
-degraded render, not a failed one. Every call that changes or renders publishes its event on the
-bus the instrument was given, after the change is made, under a correlation id of its own.
+degraded render, not a failed one. A render longer than MAX_SAMPLES, or faster than
+MAX_SAMPLE_RATE, is refused with RenderFailedError before anything is allocated. The notes are
+mixed straight into the one float32 buffer the result copies. Every call that changes or renders
+publishes its event on the bus the instrument was given, after the change is made, under a
+correlation id of its own; a call it refuses publishes nothing.
+
+A subclass may widen the parameters by overriding `parameters()`: the instrument reads them
+through it.
 """
 
 import time
@@ -18,7 +24,12 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from patchbay.errors import ParameterNotFoundError, PatchbayError, PatchRejectedError
+from patchbay.errors import (
+    ParameterNotFoundError,
+    PatchbayError,
+    PatchRejectedError,
+    RenderFailedError,
+)
 from patchbay.events import EventBus, ParameterChanged, PatchLoaded, RenderCompleted
 from patchbay.models import (
     Parameter,
@@ -38,7 +49,15 @@ _A4_HZ = 440.0
 _A4_PITCH = 69
 _SEMITONES_PER_OCTAVE = 12
 _VELOCITY_TOP = 127
-_SECONDS_PER_MINUTE = 60.0
+
+MAX_SAMPLES = 2**24
+"""The longest render the fake makes, in samples: about 5.8 minutes at 48 kHz, 64 MiB of float32."""
+
+MAX_SAMPLE_RATE = 768_000
+"""The fastest sample rate the fake renders at, the highest standard PCM rate.
+
+Within it and MAX_SAMPLES, every float the voice computes is finite.
+"""
 
 _LEVEL = ParameterId("level")
 _DECAY = ParameterId("decay")
@@ -89,23 +108,15 @@ PARAMETERS: tuple[Parameter, ...] = (
 """FakeInstrument's parameters, in the order `parameters()` gives them."""
 
 
-def _fault(parameter: Parameter, value: Quantity) -> str | None:
-    """Say why the parameter refuses the value, or None when it takes it."""
-    try:
-        parameter.check(value)
-    except PatchbayError as error:
-        return str(error)
-    return None
-
-
 class FakeInstrument:
     """An Instrument with eight parameters and a sine voice, publishing on the bus it is given."""
 
     def __init__(self, bus: EventBus) -> None:
         """Start at every parameter's default, with no opaque sections."""
         self._bus = bus
-        self._parameters = {parameter.id: parameter for parameter in PARAMETERS}
-        self._values = {parameter.id: parameter.default for parameter in PARAMETERS}
+        parameters = self.parameters()
+        self._parameters = {parameter.id: parameter for parameter in parameters}
+        self._values = {parameter.id: parameter.default for parameter in parameters}
         self._opaque: Mapping[str, bytes] = MappingProxyType({})
 
     @property
@@ -141,14 +152,12 @@ class FakeInstrument:
 
         The whole patch is checked before anything changes. A parameter the patch leaves out goes
         to its default. PatchRejectedError for another instrument's patch, an id this instrument
-        does not have, or a value its parameter refuses.
+        does not have, or a value its parameter refuses, raised from the error that refused it.
         """
-        reason = self._refusal(patch)
-        if reason is not None:
-            raise PatchRejectedError(reason)
+        self._check_whole(patch)
         self._values = {
             parameter.id: patch.values.get(parameter.id, parameter.default)
-            for parameter in PARAMETERS
+            for parameter in self.parameters()
         }
         self._opaque = patch.opaque
         self._bus.publish(
@@ -167,34 +176,38 @@ class FakeInstrument:
     def render(self, pattern: Pattern, request: RenderRequest, /) -> RenderResult:
         """Render the pattern and its tail as one channel, then publish RenderCompleted.
 
-        `round((bars * beats_per_bar * 60 / tempo_bpm + tail_seconds) * sample_rate)` samples.
+        `request.samples(pattern)` samples, each note from `request.sample_at` its start to its
+        end. RenderFailedError, with nothing allocated and nothing published, past MAX_SAMPLES or
+        MAX_SAMPLE_RATE. The notes sum in the one float32 buffer the result copies, so a render
+        holds two buffers its full length, besides each note's own while it is mixed.
         """
         started = time.perf_counter()
         rate = request.sample_rate
-        seconds_per_beat = _SECONDS_PER_MINUTE / pattern.tempo_bpm
-        pattern_seconds = pattern.bars * pattern.beats_per_bar * seconds_per_beat
-        total = round((pattern_seconds + request.tail_seconds) * rate)
-        mix = np.zeros(total, dtype=np.float64)
+        if rate > MAX_SAMPLE_RATE:
+            msg = f"the fake renders at up to {MAX_SAMPLE_RATE} Hz, and was asked for a faster rate"
+            raise RenderFailedError(msg)
+        total = request.samples(pattern)
+        if total > MAX_SAMPLES:
+            msg = f"the fake renders up to {MAX_SAMPLES} samples, and this render is longer"
+            raise RenderFailedError(msg)
+        mix = np.zeros((1, total), dtype=np.float32)
         level = self._values[_LEVEL].value
         decay = self._values[_DECAY].value
         for note in pattern.notes:
-            start = round(note.start_beats * seconds_per_beat * rate)
-            end = min(
-                round((note.start_beats + note.duration_beats) * seconds_per_beat * rate), total
-            )
+            start = request.sample_at(pattern, note.start_beats)
+            end = min(request.sample_at(pattern, note.start_beats + note.duration_beats), total)
             elapsed = np.arange(end - start, dtype=np.float64) / rate
             frequency = _A4_HZ * 2.0 ** ((note.pitch - _A4_PITCH) / _SEMITONES_PER_OCTAVE)
             envelope = np.clip(1.0 - elapsed / decay, 0.0, None)
             gain = level * note.velocity / _VELOCITY_TOP
-            mix[start:end] += gain * envelope * np.sin(2.0 * np.pi * frequency * elapsed)
+            mix[0, start:end] += gain * envelope * np.sin(2.0 * np.pi * frequency * elapsed)
         warnings: tuple[str, ...] = ()
-        peak = float(np.max(np.abs(mix), initial=0.0))
+        peak = float(max(np.max(mix, initial=0.0), -np.min(mix, initial=0.0)))
         if peak > 1.0:
-            mix = np.clip(mix, -1.0, 1.0)
+            np.clip(mix, -1.0, 1.0, out=mix)
             warnings = (f"clipped: the notes summed to {peak:.3f} of full scale",)
-        audio = mix.astype(np.float32).reshape(1, total)
         result = RenderResult(
-            audio=audio,
+            audio=mix,
             sample_rate=rate,
             elapsed_seconds=time.perf_counter() - started,
             warnings=warnings,
@@ -217,18 +230,20 @@ class FakeInstrument:
         except KeyError:
             raise ParameterNotFoundError(parameter_id, self.name) from None
 
-    def _refusal(self, patch: Patch) -> str | None:
-        """Say why the patch cannot be loaded whole, or None when it can."""
+    def _check_whole(self, patch: Patch) -> None:
+        """Raise PatchRejectedError unless the whole patch loads, from the error that refuses it.
+
+        The cause is the ParameterNotFoundError for an id this instrument does not have, or what
+        Parameter.check raises for a value; another instrument's patch has none.
+        """
         if patch.instrument != self.name:
-            return f"the patch is for instrument {patch.instrument!r}, not {self.name!r}"
-        for parameter_id, value in patch.values.items():
-            parameter = self._parameters.get(parameter_id)
-            if parameter is None:
-                return f"instrument {self.name!r} has no parameter {parameter_id!r}"
-            reason = _fault(parameter, value)
-            if reason is not None:
-                return reason
-        return None
+            msg = f"the patch is for instrument {patch.instrument!r}, not {self.name!r}"
+            raise PatchRejectedError(msg)
+        try:
+            for parameter_id, value in patch.values.items():
+                self._parameter(parameter_id).check(value)
+        except PatchbayError as error:
+            raise PatchRejectedError(str(error)) from error
 
 
 def _correlation() -> str:

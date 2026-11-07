@@ -1,12 +1,14 @@
 """The tests every adapter runs against its real instrument.
 
-Each is a plain function, `test_<property>(instrument, bus) -> None`, taking an instrument that
-publishes on `bus`, fresh for the test. A test that finds the property broken raises
-`ContractViolationError`, an `AssertionError` naming the test, what it expected and what it got;
-it never uses `assert`, which `python -O` strips, and never imports pytest, which an installed
-package cannot count on. An exception the test does not expect propagates as itself.
+Each is a plain function, `<property>(instrument, bus) -> None`, taking an instrument that
+publishes on `bus`, fresh for the test. Its name has no `test_` prefix, so pytest never collects
+one an adapter imports by name: the adapter runs them through `CONTRACT_TESTS`, each once. A test
+that finds the property broken raises `ContractViolationError`, an `AssertionError` naming the
+test, what it expected and what it got; it never uses `assert`, which `python -O` strips, and
+never imports pytest, which an installed package cannot count on. An exception the test does not
+expect propagates as itself.
 
-`CONTRACT_TESTS` lists them all. An adapter's tests parametrize over it, with `instrument` and
+`CONTRACT_TESTS` lists all thirteen. An adapter's tests parametrize over it, with `instrument` and
 `bus` fixtures in its `conftest.py` (`tests/unit/testing/conftest.py` here is the shape):
 
     @pytest.mark.parametrize("contract_test", CONTRACT_TESTS, ids=lambda test: test.__name__)
@@ -15,9 +17,12 @@ package cannot count on. An exception the test does not expect propagates as its
 
 Each test works out what it expects from the instrument's parameters and the contract alone,
 never from an implementation's code. Values are set at a parameter's bounds, so an instrument
-that stores what it is given gets back exactly what it was given.
+that stores what it is given gets back exactly what it was given, and refused one float past
+them, so a check with any slack is caught.
 """
 
+import math
+import sys
 from collections.abc import Callable
 from functools import partial
 
@@ -25,6 +30,7 @@ from patchbay.contracts import Instrument
 from patchbay.errors import (
     ParameterNotFoundError,
     PatchRejectedError,
+    RenderFailedError,
     UnitMismatchError,
     ValueOutOfRangeError,
 )
@@ -44,7 +50,6 @@ from patchbay.testing.recording import RecordingSubscriber
 type ContractTest = Callable[[Instrument, EventBus], None]
 """A contract test: it takes the instrument and the bus it publishes on, and returns or raises."""
 
-_SECONDS_PER_MINUTE = 60.0
 _PATTERN = Pattern(
     tempo_bpm=120.0,
     bars=1,
@@ -52,6 +57,8 @@ _PATTERN = Pattern(
     notes=(Note(pitch=60, velocity=100, start_beats=0.0, duration_beats=1.0, channel=0),),
 )
 _REQUEST = RenderRequest(sample_rate=48000, tail_seconds=0.25)
+# One beat at the slowest tempo a float holds: some 1e315 samples at 48 kHz, past any instrument.
+_IMPOSSIBLE = Pattern(tempo_bpm=sys.float_info.min, bars=1, beats_per_bar=1, notes=())
 
 
 class ContractViolationError(AssertionError):
@@ -97,30 +104,34 @@ def _other_value(parameter: Parameter, current: Quantity) -> Quantity:
 
 
 def _out_of_range(parameter: Parameter) -> list[Quantity]:
-    """Return values in the parameter's unit it does not take: past each bound, between steps."""
-    candidates = [parameter.maximum + 1.0, parameter.minimum - 1.0]
+    """Return values in the parameter's unit it does not take: past each bound, between steps.
+
+    Past a bound is the next float beyond it, which a bound as large as 2**53 still has and
+    `bound + 1.0` does not; a bound with no finite float beyond it, the largest float, has none.
+    A ratio's candidates stay in [0, 1], all a ratio Quantity holds.
+    """
+    beyond = (
+        math.nextafter(parameter.maximum, math.inf),
+        math.nextafter(parameter.minimum, -math.inf),
+    )
+    candidates = [value for value in beyond if math.isfinite(value)]
     if parameter.unit is Unit.ratio:
-        candidates = [
-            value for value in (1.0, 0.0) if not parameter.minimum <= value <= parameter.maximum
-        ]
+        candidates = [value for value in candidates if 0.0 <= value <= 1.0]
     if parameter.kind != "continuous":
         candidates.append(parameter.minimum + 0.5)
     return [Quantity(value=value, unit=parameter.unit) for value in candidates]
 
 
 def _unknown_id(instrument: Instrument) -> ParameterId:
-    """Return an id none of the instrument's parameters has."""
-    known = {parameter.id for parameter in instrument.parameters()}
-    unknown = "patchbay.contract_tests.unknown"
-    while unknown in known:
-        unknown += "_"
-    return ParameterId(unknown)
+    """Return an id none of the instrument's parameters has, sorting after every one of theirs."""
+    known = [parameter.id for parameter in instrument.parameters()]
+    return ParameterId(max(known, default="patchbay") + ".unknown")
 
 
-def test_parameters_are_unique_and_typed(instrument: Instrument, bus: EventBus) -> None:
-    """The instrument exposes at least one Parameter, and no two share an id."""
+def parameters_are_unique_and_typed(instrument: Instrument, bus: EventBus) -> None:
+    """Check that the instrument exposes at least one Parameter, and no two share an id."""
     del bus
-    test = "test_parameters_are_unique_and_typed"
+    test = "parameters_are_unique_and_typed"
     parameters = tuple(instrument.parameters())
     _require(test, "at least one parameter", parameters, holds=len(parameters) > 0)
     for parameter in parameters:
@@ -131,10 +142,10 @@ def test_parameters_are_unique_and_typed(instrument: Instrument, bus: EventBus) 
     _require(test, "every parameter id once", ids, holds=len(set(ids)) == len(ids))
 
 
-def test_get_after_set_returns_what_was_set(instrument: Instrument, bus: EventBus) -> None:
-    """For every parameter, `get` returns the value `set` was given."""
+def get_after_set_returns_what_was_set(instrument: Instrument, bus: EventBus) -> None:
+    """Check that, for every parameter, `get` returns the value `set` was given."""
     del bus
-    test = "test_get_after_set_returns_what_was_set"
+    test = "get_after_set_returns_what_was_set"
     for parameter in instrument.parameters():
         value = _other_value(parameter, instrument.get(parameter.id))
         instrument.set(parameter.id, value)
@@ -142,11 +153,9 @@ def test_get_after_set_returns_what_was_set(instrument: Instrument, bus: EventBu
         _require(test, f"{parameter.id} at {value!r}", got, holds=got == value)
 
 
-def test_set_with_the_wrong_unit_raises_unit_mismatch(
-    instrument: Instrument, bus: EventBus
-) -> None:
-    """A value in any unit but the parameter's is refused, changing nothing, publishing nothing."""
-    test = "test_set_with_the_wrong_unit_raises_unit_mismatch"
+def set_with_the_wrong_unit_raises_unit_mismatch(instrument: Instrument, bus: EventBus) -> None:
+    """Check that a value in another unit is refused, changing nothing and publishing nothing."""
+    test = "set_with_the_wrong_unit_raises_unit_mismatch"
     recorder = _recorder(bus)
     before = instrument.patch()
     for parameter in instrument.parameters():
@@ -161,9 +170,9 @@ def test_set_with_the_wrong_unit_raises_unit_mismatch(
     _require(test, "no event", recorder.events, holds=not recorder.events)
 
 
-def test_an_unknown_id_raises_parameter_not_found(instrument: Instrument, bus: EventBus) -> None:
-    """An id the instrument does not have is refused by `get` and `set`, naming the id."""
-    test = "test_an_unknown_id_raises_parameter_not_found"
+def an_unknown_id_raises_parameter_not_found(instrument: Instrument, bus: EventBus) -> None:
+    """Check that `get` and `set` refuse an id the instrument does not have, naming it."""
+    test = "an_unknown_id_raises_parameter_not_found"
     recorder = _recorder(bus)
     unknown = _unknown_id(instrument)
     parameter = instrument.parameters()[0]
@@ -179,11 +188,9 @@ def test_an_unknown_id_raises_parameter_not_found(instrument: Instrument, bus: E
     _require(test, "no event", recorder.events, holds=not recorder.events)
 
 
-def test_a_value_out_of_range_raises_value_out_of_range(
-    instrument: Instrument, bus: EventBus
-) -> None:
-    """Past either bound, or between a choice's or boolean's steps, a value is refused."""
-    test = "test_a_value_out_of_range_raises_value_out_of_range"
+def a_value_out_of_range_raises_value_out_of_range(instrument: Instrument, bus: EventBus) -> None:
+    """Check that a value past a bound, or between a choice's or boolean's steps, is refused."""
+    test = "a_value_out_of_range_raises_value_out_of_range"
     recorder = _recorder(bus)
     before = instrument.patch()
     for parameter in instrument.parameters():
@@ -201,10 +208,10 @@ def test_a_value_out_of_range_raises_value_out_of_range(
     _require(test, "no event", recorder.events, holds=not recorder.events)
 
 
-def test_patch_round_trips_through_load_patch(instrument: Instrument, bus: EventBus) -> None:
-    """A patch, through JSON and loaded back after a change, gives the same patch again."""
+def patch_round_trips_through_load_patch(instrument: Instrument, bus: EventBus) -> None:
+    """Check that a patch, through JSON and loaded back after a change, gives the same patch."""
     del bus
-    test = "test_patch_round_trips_through_load_patch"
+    test = "patch_round_trips_through_load_patch"
     patch = instrument.patch()
     _require(
         test,
@@ -219,9 +226,9 @@ def test_patch_round_trips_through_load_patch(instrument: Instrument, bus: Event
     _require(test, "the patch loaded", after, holds=after == patch)
 
 
-def test_a_rejected_patch_changes_nothing(instrument: Instrument, bus: EventBus) -> None:
-    """Another instrument's patch is refused, the instrument unchanged, nothing published."""
-    test = "test_a_rejected_patch_changes_nothing"
+def a_rejected_patch_changes_nothing(instrument: Instrument, bus: EventBus) -> None:
+    """Check that another instrument's patch is refused, changing nothing and publishing nothing."""
+    test = "a_rejected_patch_changes_nothing"
     recorder = _recorder(bus)
     before = instrument.patch()
     other = Patch(instrument=f"{instrument.name}.other", values=before.values)
@@ -231,24 +238,63 @@ def test_a_rejected_patch_changes_nothing(instrument: Instrument, bus: EventBus)
     _require(test, "no event", recorder.events, holds=not recorder.events)
 
 
-def test_render_returns_the_declared_shape_and_sample_rate(
+def a_patch_refused_part_way_changes_nothing(instrument: Instrument, bus: EventBus) -> None:
+    """Check that a patch bad only at its last entry is refused whole: nothing loaded or published.
+
+    A patch's values are sorted by id, so an instrument that loads them one at a time meets the
+    bad entry last, after every good one. Each patch names the instrument and gives every
+    parameter before the bad entry a value other than the one it holds. The bad entry is the
+    last parameter in a wrong unit, or at each value it does not take, or an id after all of them.
+    """
+    test = "a_patch_refused_part_way_changes_nothing"
+    recorder = _recorder(bus)
+    before = instrument.patch()
+    parameters = sorted(instrument.parameters(), key=lambda parameter: parameter.id)
+    good = {p.id: _other_value(p, instrument.get(p.id)) for p in parameters}
+    last = parameters[-1]
+    wrong = next(unit for unit in Unit if unit is not last.unit)
+    bad: list[tuple[ParameterId, Quantity]] = [
+        (last.id, Quantity(value=0.0, unit=wrong)),
+        *((last.id, value) for value in _out_of_range(last)),
+        (_unknown_id(instrument), last.default),
+    ]
+    for parameter_id, value in bad:
+        patch = Patch(instrument=instrument.name, values={**good, parameter_id: value})
+        _raises(test, PatchRejectedError, partial(instrument.load_patch, patch))
+        after = instrument.patch()
+        expected = f"the instrument unchanged by a patch refused at {parameter_id} {value!r}"
+        _require(test, expected, after, holds=after == before)
+    _require(test, "no event", recorder.events, holds=not recorder.events)
+
+
+def render_returns_the_declared_shape_and_sample_rate(
     instrument: Instrument, bus: EventBus
 ) -> None:
-    """The pattern and its tail, at the request's rate, in one channel or more of float32."""
+    """Check that a render is the pattern and its tail at the request's rate, in float32."""
     del bus
-    test = "test_render_returns_the_declared_shape_and_sample_rate"
+    test = "render_returns_the_declared_shape_and_sample_rate"
     result = instrument.render(_PATTERN, _REQUEST)
-    beats = _PATTERN.bars * _PATTERN.beats_per_bar
-    seconds = beats * _SECONDS_PER_MINUTE / _PATTERN.tempo_bpm + _REQUEST.tail_seconds
-    samples = round(seconds * _REQUEST.sample_rate)
+    samples = _REQUEST.samples(_PATTERN)
     _require(test, f"{samples} samples", result.audio.shape, holds=result.audio.shape[1] == samples)
     rate = _REQUEST.sample_rate
     _require(test, f"{rate} Hz", result.sample_rate, holds=result.sample_rate == rate)
 
 
-def test_set_emits_parameter_changed_once(instrument: Instrument, bus: EventBus) -> None:
-    """One set, one ParameterChanged, saying which parameter, from what and to what."""
-    test = "test_set_emits_parameter_changed_once"
+def an_impossible_render_raises_render_failed(instrument: Instrument, bus: EventBus) -> None:
+    """Check that a render no instrument could hold raises RenderFailedError, publishing nothing.
+
+    The render is some 1e315 samples, past any instrument's limits, so it is the instrument's
+    refusal that reports it, never a built-in exception or memory running out.
+    """
+    test = "an_impossible_render_raises_render_failed"
+    recorder = _recorder(bus)
+    _raises(test, RenderFailedError, partial(instrument.render, _IMPOSSIBLE, _REQUEST))
+    _require(test, "no event", recorder.events, holds=not recorder.events)
+
+
+def set_emits_parameter_changed_once(instrument: Instrument, bus: EventBus) -> None:
+    """Check that one set publishes one ParameterChanged: which parameter, from what, to what."""
+    test = "set_emits_parameter_changed_once"
     parameter = instrument.parameters()[0]
     old = instrument.get(parameter.id)
     new = _other_value(parameter, old)
@@ -264,9 +310,9 @@ def test_set_emits_parameter_changed_once(instrument: Instrument, bus: EventBus)
     )
 
 
-def test_load_patch_emits_patch_loaded_once(instrument: Instrument, bus: EventBus) -> None:
-    """One load, one PatchLoaded, naming the instrument and counting the patch's values."""
-    test = "test_load_patch_emits_patch_loaded_once"
+def load_patch_emits_patch_loaded_once(instrument: Instrument, bus: EventBus) -> None:
+    """Check that one load publishes one PatchLoaded, naming the instrument and counting values."""
+    test = "load_patch_emits_patch_loaded_once"
     patch = instrument.patch()
     recorder = _recorder(bus)
     instrument.load_patch(patch)
@@ -279,9 +325,9 @@ def test_load_patch_emits_patch_loaded_once(instrument: Instrument, bus: EventBu
     _require(test, "the name and the count of values", fields, holds=fields == wanted)
 
 
-def test_render_emits_render_completed_once(instrument: Instrument, bus: EventBus) -> None:
-    """One render, one RenderCompleted, carrying the result's times and warnings."""
-    test = "test_render_emits_render_completed_once"
+def render_emits_render_completed_once(instrument: Instrument, bus: EventBus) -> None:
+    """Check that one render publishes one RenderCompleted with the result's times and warnings."""
+    test = "render_emits_render_completed_once"
     recorder = _recorder(bus)
     result = instrument.render(_PATTERN, _REQUEST)
     events = recorder.events
@@ -299,16 +345,18 @@ def test_render_emits_render_completed_once(instrument: Instrument, bus: EventBu
 
 
 CONTRACT_TESTS: tuple[ContractTest, ...] = (
-    test_parameters_are_unique_and_typed,
-    test_get_after_set_returns_what_was_set,
-    test_set_with_the_wrong_unit_raises_unit_mismatch,
-    test_an_unknown_id_raises_parameter_not_found,
-    test_a_value_out_of_range_raises_value_out_of_range,
-    test_patch_round_trips_through_load_patch,
-    test_a_rejected_patch_changes_nothing,
-    test_render_returns_the_declared_shape_and_sample_rate,
-    test_set_emits_parameter_changed_once,
-    test_load_patch_emits_patch_loaded_once,
-    test_render_emits_render_completed_once,
+    parameters_are_unique_and_typed,
+    get_after_set_returns_what_was_set,
+    set_with_the_wrong_unit_raises_unit_mismatch,
+    an_unknown_id_raises_parameter_not_found,
+    a_value_out_of_range_raises_value_out_of_range,
+    patch_round_trips_through_load_patch,
+    a_rejected_patch_changes_nothing,
+    a_patch_refused_part_way_changes_nothing,
+    render_returns_the_declared_shape_and_sample_rate,
+    an_impossible_render_raises_render_failed,
+    set_emits_parameter_changed_once,
+    load_patch_emits_patch_loaded_once,
+    render_emits_render_completed_once,
 )
 """Every contract test, in the order an adapter's report lists them."""

@@ -1,10 +1,18 @@
 """Events are frozen, named and stamped in UTC; the bus delivers each to every subscriber."""
 
+import gc
+import json
+import weakref
 from datetime import UTC, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import pytest
 
-from patchbay.errors import PatchbayValidationError, SubscriberFailedError
+from patchbay.errors import (
+    PatchbayValidationError,
+    SubscriberFailedError,
+    SubscriptionRejectedError,
+)
 from patchbay.events import (
     Event,
     EventBus,
@@ -12,6 +20,7 @@ from patchbay.events import (
     PatchLoaded,
     RenderCompleted,
     Subscriber,
+    Subscription,
 )
 from patchbay.models import ParameterId, Quantity, Unit
 
@@ -73,7 +82,10 @@ def test_an_event_is_stamped_in_utc_when_built() -> None:
     event = _changed()
     after = datetime.now(UTC)
     assert before <= event.at <= after
-    assert event.at.utcoffset() == timedelta(0)
+    assert event.at.tzinfo is UTC
+
+
+_LONDON = ZoneInfo("Europe/London")
 
 
 @pytest.mark.parametrize(
@@ -81,19 +93,52 @@ def test_an_event_is_stamped_in_utc_when_built() -> None:
     [
         datetime.fromisoformat("2026-11-07T08:00:00"),
         datetime(2026, 11, 7, 8, 0, tzinfo=timezone(timedelta(hours=1))),
+        datetime(2026, 1, 15, 12, 0, tzinfo=_LONDON),
+        datetime(2026, 7, 15, 12, 0, tzinfo=_LONDON),
     ],
-    ids=["naive", "an hour east of UTC"],
+    ids=["naive", "an hour east of UTC", "London in January", "London in July"],
 )
 def test_an_event_s_time_is_refused_unless_utc(at: datetime) -> None:
-    """A naive time, or one at another offset, is refused rather than guessed at or converted."""
+    """A naive time, or a zone other than UTC, is refused rather than guessed at or converted.
+
+    The zone is judged, not the instant: London is at offset zero in January, and is refused then
+    as in July, so whether an event is valid never depends on the season it was built in.
+    """
     with pytest.raises(PatchbayValidationError, match="in UTC"):
         Event(name="thing.happened", at=at, source="fake", correlation_id="c1")
+
+
+@pytest.mark.parametrize(
+    "zone",
+    [UTC, timezone(timedelta(0), "Z"), ZoneInfo("UTC")],
+    ids=["datetime.UTC", "a zero offset named Z", "ZoneInfo UTC"],
+)
+def test_a_time_in_utc_is_held_as_datetime_utc(zone: timezone | ZoneInfo) -> None:
+    """Any zone at offset zero all year is UTC, and the event holds the time in UTC itself."""
+    at = datetime(2026, 7, 15, 12, 0, tzinfo=zone)
+    event = Event(name="thing.happened", at=at, source="fake", correlation_id="c1")
+    assert event.at == at
+    assert event.at.tzinfo is UTC
 
 
 def test_an_event_round_trips_through_json() -> None:
     """An event comes back equal from its JSON, its time and its typed payload included."""
     event = _changed()
-    assert ParameterChanged.model_validate_json(event.model_dump_json()) == event
+    restored = ParameterChanged.model_validate_json(event.model_dump_json())
+    assert restored == event
+    assert restored.at.tzinfo is UTC
+
+
+def test_an_event_comes_back_from_its_json_data() -> None:
+    """json.loads of an event's JSON holds its time as an ISO string; from_json_data reads it."""
+    event = _changed()
+    assert ParameterChanged.from_json_data(json.loads(event.model_dump_json())) == event
+
+
+def test_a_changed_parameter_is_named() -> None:
+    """An empty id is refused, as Parameter refuses one."""
+    with pytest.raises(PatchbayValidationError, match="id"):
+        ParameterChanged(source="fake", correlation_id="c1", id=ParameterId(""), old=_OLD, new=_NEW)
 
 
 @pytest.mark.parametrize("field", ["source", "correlation_id"])
@@ -184,6 +229,134 @@ def test_a_subscriber_added_during_a_publish_starts_with_the_next_event() -> Non
     assert late == [second]
 
 
+def _subscribe_unchecked(bus: EventBus, event_type: object, subscriber: object) -> None:
+    """Subscribe as a caller mypy never saw would: the ignore holds mypy's refusal of the types."""
+    bus.subscribe(event_type, subscriber)  # type: ignore[call-overload]
+
+
+@pytest.mark.parametrize(
+    ("event_type", "subscriber"),
+    [
+        ("parameter.changed", print),
+        (int, print),
+        (Quantity, print),
+        (_changed(), print),
+        (ParameterChanged, 3),
+        (None, "parameter.changed"),
+    ],
+    ids=[
+        "an event's name",
+        "a type not an event",
+        "a model not an event",
+        "an event, not its type",
+        "a number",
+        "a str",
+    ],
+)
+def test_a_bad_subscription_is_refused_where_it_is_made(
+    event_type: object, subscriber: object
+) -> None:
+    """Refused at subscribe, and nothing subscribed: every publish after it still delivers."""
+    bus = EventBus()
+    received: list[Event] = []
+    bus.subscribe(None, received.append)
+    with pytest.raises(SubscriptionRejectedError):
+        _subscribe_unchecked(bus, event_type, subscriber)
+    event = _changed()
+    bus.publish(event)
+    assert received == [event]
+
+
+def test_a_subscription_says_what_it_delivers_and_to_whom() -> None:
+    """The type it delivers, Event for every event, and the subscriber it delivers to."""
+    bus = EventBus()
+    received: list[Event] = []
+    every = bus.subscribe(None, received.append)
+    changes = bus.subscribe(ParameterChanged, received.append)
+    assert (every.event_type, changes.event_type) == (Event, ParameterChanged)
+    assert every.subscriber == received.append
+    assert every.active
+
+
+def test_cancel_ends_delivery_and_a_second_cancel_does_nothing() -> None:
+    """After cancel the subscriber receives nothing more; cancelling again is harmless."""
+    bus = EventBus()
+    received: list[Event] = []
+    subscription = bus.subscribe(None, received.append)
+    first = _changed("c1")
+    bus.publish(first)
+    subscription.cancel()
+    subscription.cancel()
+    bus.publish(_changed("c2"))
+    assert received == [first]
+    assert not subscription.active
+
+
+def test_a_subscription_is_a_context_manager_that_cancels_on_exit() -> None:
+    """Leaving the block cancels, whether it returned or raised, and what it raised goes on."""
+    bus = EventBus()
+    received: list[Event] = []
+    with bus.subscribe(None, received.append) as subscription:
+        inside = _changed("c1")
+        bus.publish(inside)
+    bus.publish(_changed("c2"))
+    assert received == [inside]
+    assert not subscription.active
+    with pytest.raises(KeyError), bus.subscribe(None, received.append) as raising:
+        raise KeyError
+    assert not raising.active
+
+
+def test_a_cancel_during_a_publish_takes_effect_from_the_next_event() -> None:
+    """Delivery runs over the subscriptions held when publish began, as a subscribe does."""
+    bus = EventBus()
+    later: list[Event] = []
+    subscriptions: list[Subscription] = []
+
+    def cancel_the_later(event: Event) -> None:
+        del event
+        subscriptions[0].cancel()
+
+    bus.subscribe(None, cancel_the_later)
+    subscriptions.append(bus.subscribe(None, later.append))
+    first, second = _changed("c1"), _changed("c2")
+    bus.publish(first)
+    bus.publish(second)
+    assert later == [first]
+
+
+def test_each_subscribe_is_its_own_subscription() -> None:
+    """Subscribed twice, a subscriber receives twice, and once when one subscription ends."""
+    bus = EventBus()
+    received: list[Event] = []
+    first = bus.subscribe(None, received.append)
+    bus.subscribe(None, received.append)
+    event = _changed()
+    bus.publish(event)
+    first.cancel()
+    bus.publish(event)
+    assert received == [event, event, event]
+
+
+class _Holder:
+    """A subscriber that holds something, to watch whether the bus keeps it alive."""
+
+    def __call__(self, event: Event, /) -> None:
+        del event
+
+
+def test_a_cancelled_subscriber_is_no_longer_held_by_the_bus() -> None:
+    """The bus drops a cancelled subscription, so what its subscriber holds can be collected."""
+    bus = EventBus()
+    holder = _Holder()
+    held = weakref.ref(holder)
+    subscription = bus.subscribe(None, holder)
+    subscription.cancel()
+    del holder, subscription
+    gc.collect()
+    assert held() is None
+
+
 def test_a_failing_subscriber_hides_the_event_from_no_other() -> None:
     """Every subscriber runs; then SubscriberFailedError carries each error, from the first."""
     bus = EventBus()
@@ -204,7 +377,7 @@ def test_a_failing_subscriber_hides_the_event_from_no_other() -> None:
         bus.publish(event)
     assert received == [event]
     assert caught.value.event_name == "parameter.changed"
-    assert caught.value.errors == (first_error, second_error)
+    assert caught.value.exceptions == (first_error, second_error)
     assert caught.value.__cause__ is first_error
 
 

@@ -1,0 +1,63 @@
+Finding 6's regression test, run against the code it replaced, 2026-11-07, branch
+feature/10-contracts-instrument-protocol-models-errors-events-and-the-fakeinstrument-reference-implementation, on the revised tree.
+The script puts _out_of_range back as it was at 6f4e7a8 (maximum + 1.0, minimum - 1.0) by
+assigning it into patchbay.testing.contract_tests at runtime, edits no file, and runs
+test_a_correct_instrument_with_the_widest_bounds_passes, whose fake adds a parameter up to 2**53
+("far") and one over [-float max, float max] ("widest"). Expected: the out-of-range test fails a
+correct instrument, as the review says, and so does the new part-way test, whose last parameter in
+sorted order is "widest". Both fail with "no exception": at 2**53 and at float max alike,
+maximum + 1.0 rounds to maximum, a value the parameter takes. (The review says the sum overflows to
+inf at float max; probes.txt, findings.py 6, shows it does not. inf comes from nextafter, the fix,
+which is why the revised _out_of_range drops a non-finite candidate.)
+
+Run unmutated, the same test passes thirteen times (gate-run.txt).
+
+The broken fakes for the two new contract tests are tests/unit/testing/test_contract_tests.py's
+_LoadsUntilARefusal and _RendersAnyLength, each asserted for its reason by
+test_each_contract_test_catches_its_broken_fake.
+
+================================================================================
+probes/mutations.py
+
+"""Each new regression test, run against the behaviour it replaced, put back at runtime."""
+
+import sys
+
+import pytest
+
+from patchbay.models import Parameter, Quantity, Unit
+from patchbay.testing import contract_tests as contract
+
+
+def old_out_of_range(parameter: Parameter) -> list[Quantity]:
+    """_out_of_range at 6f4e7a8, verbatim."""
+    candidates = [parameter.maximum + 1.0, parameter.minimum - 1.0]
+    if parameter.unit is Unit.ratio:
+        candidates = [
+            value for value in (1.0, 0.0) if not parameter.minimum <= value <= parameter.maximum
+        ]
+    if parameter.kind != "continuous":
+        candidates.append(parameter.minimum + 0.5)
+    return [Quantity(value=value, unit=parameter.unit) for value in candidates]
+
+
+contract._out_of_range = old_out_of_range  # the mutation: finding 6's code back in place
+sys.exit(
+    pytest.main(
+        [
+            "--no-header",
+            "-p",
+            "no:cacheprovider",
+            "tests/unit/testing/test_contract_tests.py::test_a_correct_instrument_with_the_widest_bounds_passes",
+        ]
+    )
+)
+
+-------------------------------------------------------------------------------- output (uv run --locked python probes/mutations.py)
+
+E       patchbay.testing.contract_tests.ContractViolationError: a_value_out_of_range_raises_value_out_of_range: expected ValueOutOfRangeError to be raised, got no exception
+E       patchbay.testing.contract_tests.ContractViolationError: a_patch_refused_part_way_changes_nothing: expected PatchRejectedError to be raised, got no exception
+FAILED tests/unit/testing/test_contract_tests.py::test_a_correct_instrument_with_the_widest_bounds_passes[a_value_out_of_range_raises_value_out_of_range]
+FAILED tests/unit/testing/test_contract_tests.py::test_a_correct_instrument_with_the_widest_bounds_passes[a_patch_refused_part_way_changes_nothing]
+2 failed, 11 passed in 0.07s
+exit=1

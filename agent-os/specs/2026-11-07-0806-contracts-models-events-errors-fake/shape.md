@@ -280,6 +280,10 @@ gate file changed, so no negative test was rerun. `verification/probes.txt` hold
 numpy and mypy behaviour the design rests on. `verification/uv-lock-diff.txt` shows the lock
 gaining pydantic, numpy and their dependencies and nothing else.
 
+Revised after the review of PR 11 in `agent-os/specs/2026-11-07-1432-contracts-revision-after-pr-11-review/`,
+which narrows the validation boundary, adds `from_json_data`, unsubscribe and two contract tests,
+and renames the error fields and the contract tests; the transcripts here are the first round's.
+
 **Docs (step 7):**
 
 - **`README.md`:** Layout names each module, `testing/` and the conftest an adapter copies, and

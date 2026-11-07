@@ -12,6 +12,7 @@ from patchbay.errors import (
     PatchRejectedError,
     RenderFailedError,
     SubscriberFailedError,
+    SubscriptionRejectedError,
     UnitMismatchError,
     ValueOutOfRangeError,
 )
@@ -47,6 +48,10 @@ _ERRORS: tuple[tuple[PatchbayError, str], ...] = (
     (
         RenderFailedError("the device stopped answering"),
         "render failed: the device stopped answering",
+    ),
+    (
+        SubscriptionRejectedError("'parameter.changed' is not an Event type"),
+        "subscription rejected: 'parameter.changed' is not an Event type",
     ),
     (
         SubscriberFailedError("parameter.changed", (KeyError("x"), RuntimeError("down"))),
@@ -108,8 +113,19 @@ def test_fields_are_attributes() -> None:
     )
     assert PatchRejectedError("why").reason == "why"
     assert RenderFailedError("why").reason == "why"
+    assert SubscriptionRejectedError("why").reason == "why"
     first, second = KeyError("x"), RuntimeError("down")
     failed = SubscriberFailedError("parameter.changed", (first, second))
     assert failed.event_name == "parameter.changed"
-    assert failed.errors == (first, second)
-    assert PatchbayValidationError(_DETAILS).errors == _DETAILS
+    assert failed.exceptions == (first, second)
+    assert PatchbayValidationError(_DETAILS).details == _DETAILS
+
+
+def test_no_field_is_named_like_pydantic_s_errors_method() -> None:
+    """A refusal's details are `details`; code ported from pydantic's `errors()` fails loudly.
+
+    pydantic's `ValidationError.errors` is a method. A tuple of the same name would fail ported
+    code with "'tuple' object is not callable"; with no `errors` at all it fails by name.
+    """
+    assert not hasattr(PatchbayValidationError(_DETAILS), "errors")
+    assert not hasattr(SubscriberFailedError("parameter.changed", ()), "errors")

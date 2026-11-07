@@ -8,6 +8,7 @@ from patchbay.errors import (
     ParameterNotFoundError,
     PatchbayError,
     PatchRejectedError,
+    RenderFailedError,
     SubscriberFailedError,
     UnitMismatchError,
     ValueOutOfRangeError,
@@ -23,7 +24,7 @@ from patchbay.models import (
     Unit,
 )
 from patchbay.testing import FakeInstrument, RecordingSubscriber
-from patchbay.testing.fake import PARAMETERS
+from patchbay.testing.fake import MAX_SAMPLE_RATE, MAX_SAMPLES, PARAMETERS
 
 _LEVEL = ParameterId("level")
 _DECAY = ParameterId("decay")
@@ -197,30 +198,48 @@ def test_patch_holds_every_parameter_and_round_trips(instrument: Instrument) -> 
 
 
 @pytest.mark.parametrize(
-    ("patch", "reason"),
+    ("patch", "reason", "cause"),
     [
-        (Patch(instrument="vital", values={}), "for instrument 'vital'"),
-        (Patch(instrument="fake", values={ParameterId("tremolo"): _HALF}), "no parameter"),
+        (Patch(instrument="vital", values={}), "for instrument 'vital'", None),
+        (
+            Patch(instrument="fake", values={ParameterId("tremolo"): _HALF}),
+            "no parameter",
+            ParameterNotFoundError,
+        ),
         (
             Patch(instrument="fake", values={_LEVEL: Quantity(value=0.5, unit=Unit.db)}),
             "takes unit 'ratio'",
+            UnitMismatchError,
         ),
         (
             Patch(instrument="fake", values={_WAVEFORM: Quantity(value=4.0, unit=Unit.none)}),
             "not a value of parameter 'waveform'",
+            ValueOutOfRangeError,
         ),
     ],
     ids=["another instrument", "unknown id", "wrong unit", "out of range"],
 )
 def test_a_rejected_patch_changes_nothing_and_publishes_nothing(
-    instrument: Instrument, bus: EventBus, patch: Patch, reason: str
+    instrument: Instrument,
+    bus: EventBus,
+    patch: Patch,
+    reason: str,
+    cause: type[PatchbayError] | None,
 ) -> None:
-    """PatchRejectedError says why; the instrument and the bus are as they were."""
+    """PatchRejectedError says why, raised from what refused the patch; nothing has changed.
+
+    Its reason is the refusing error's own message, never a copy of it written again.
+    """
     instrument.set(_LEVEL, _HALF)
     recorder = _recorded(bus)
     before = instrument.patch()
-    with pytest.raises(PatchRejectedError, match=reason):
+    with pytest.raises(PatchRejectedError, match=reason) as caught:
         instrument.load_patch(patch)
+    if cause is None:
+        assert caught.value.__cause__ is None
+    else:
+        assert type(caught.value.__cause__) is cause
+        assert caught.value.reason == str(caught.value.__cause__)
     assert instrument.patch() == before
     assert recorder.events == ()
 
@@ -241,9 +260,60 @@ def test_render_gives_one_float32_channel_of_the_pattern_and_its_tail(
     result = instrument.render(pattern, request)
     seconds = bars * pattern.beats_per_bar * 60.0 / tempo_bpm + tail_seconds
     assert result.audio.shape == (1, round(seconds * sample_rate))
+    assert result.audio.shape[1] == request.samples(pattern)
     assert result.audio.dtype == np.float32
     assert result.sample_rate == sample_rate
     assert result.elapsed_seconds >= 0.0
+
+
+@pytest.mark.parametrize(
+    ("pattern", "request_"),
+    [
+        (_pattern(tempo_bpm=1e-300), RenderRequest(sample_rate=48000, tail_seconds=0.0)),
+        (_pattern(tempo_bpm=1e-6), RenderRequest(sample_rate=48000, tail_seconds=0.0)),
+        (_pattern(), RenderRequest(sample_rate=48000, tail_seconds=1e308)),
+        (_pattern(), RenderRequest(sample_rate=10**400, tail_seconds=0.0)),
+        (_pattern(), RenderRequest(sample_rate=MAX_SAMPLE_RATE + 1, tail_seconds=0.0)),
+        (_pattern(bars=10**400), RenderRequest(sample_rate=48000, tail_seconds=0.0)),
+        (_pattern(_note(), tempo_bpm=1.7e308), RenderRequest(sample_rate=10**310, tail_seconds=0)),
+    ],
+    ids=[
+        "tempo 1e-300",
+        "tempo 1e-6",
+        "tail 1e308",
+        "rate 10**400",
+        "rate one past the limit",
+        "bars 10**400",
+        "a few samples at a rate no float holds",
+    ],
+)
+def test_a_render_past_the_fake_s_limits_fails_and_publishes_nothing(
+    instrument: Instrument, bus: EventBus, pattern: Pattern, request_: RenderRequest
+) -> None:
+    """Valid but beyond the fake: RenderFailedError, before anything is allocated, no event.
+
+    Each of these raised a built-in exception, or ran the process out of memory, before the
+    limits (the PR 11 review's finding 1, and P1 and P2 of its revision).
+    """
+    recorder = _recorded(bus)
+    with pytest.raises(RenderFailedError, match="the fake renders"):
+        instrument.render(pattern, request_)
+    assert recorder.events == ()
+
+
+def test_the_fake_renders_up_to_its_limits_and_not_one_sample_past() -> None:
+    """MAX_SAMPLES samples render; one more is refused. The fastest rate renders too."""
+    one_second = Pattern(tempo_bpm=60.0, bars=1, beats_per_bar=1, notes=())
+    rate = 2**13
+    longest = RenderRequest(sample_rate=rate, tail_seconds=MAX_SAMPLES / rate - 1)
+    assert longest.samples(one_second) == MAX_SAMPLES
+    instrument = FakeInstrument(EventBus())
+    assert instrument.render(one_second, longest).audio.shape == (1, MAX_SAMPLES)
+    one_more = RenderRequest(sample_rate=rate, tail_seconds=longest.tail_seconds + 1 / rate)
+    with pytest.raises(RenderFailedError):
+        instrument.render(one_second, one_more)
+    fastest = RenderRequest(sample_rate=MAX_SAMPLE_RATE, tail_seconds=0.0)
+    assert instrument.render(one_second, fastest).sample_rate == MAX_SAMPLE_RATE
 
 
 def test_render_publishes_render_completed_once_with_the_result_s_times(

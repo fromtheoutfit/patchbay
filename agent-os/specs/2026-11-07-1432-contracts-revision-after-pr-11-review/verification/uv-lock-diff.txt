@@ -1,0 +1,32 @@
+The lockfile's change for pydantic-core joining [project] dependencies, 2026-11-07, branch
+feature/10-contracts-instrument-protocol-models-errors-events-and-the-fakeinstrument-reference-implementation.
+`uv lock` (uv 0.13.7) after the edit to pyproject.toml; the diff is the lock before against the lock
+after. pydantic-core 2.50.4 was already locked as pydantic 2.14.3's dependency, so only
+patchbay-core's own entry changes: its dependencies and its requires-dist each gain one line. No
+package is added, removed or moved, and no tool the gate runs changes.
+
+$ git diff -- uv.lock
+diff --git a/uv.lock b/uv.lock
+index bd83db5..f6fd179 100644
+--- a/uv.lock
++++ b/uv.lock
+@@ -476,6 +476,7 @@ source = { editable = "." }
+ dependencies = [
+     { name = "numpy" },
+     { name = "pydantic" },
++    { name = "pydantic-core" },
+ ]
+ 
+ [package.dev-dependencies]
+@@ -491,6 +492,7 @@ dev = [
+ requires-dist = [
+     { name = "numpy", specifier = ">=2.5.4,<3" },
+     { name = "pydantic", specifier = ">=2.14.3,<3" },
++    { name = "pydantic-core", specifier = ">=2.50.4,<3" },
+ ]
+ 
+ [package.metadata.requires-dev]
+
+$ uv lock --check
+Resolved 31 packages in 2ms
+exit=0

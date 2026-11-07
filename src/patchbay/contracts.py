@@ -8,9 +8,11 @@ is all a runtime-checkable protocol can ask; `issubclass` is refused, `name` bei
 Every method is synchronous. `render` may take wall-clock time, a hardware adapter's say, and its
 result records how long (`RenderResult.elapsed_seconds`). Each parameter is positional-only, so an
 implementation names its own. An instrument reports a failure as a `PatchbayError`: a parameter it
-does not have, a value in the wrong unit or out of range, a patch it refuses, a render with
-nothing usable. It publishes `ParameterChanged`, `PatchLoaded` and `RenderCompleted` on the
-`EventBus` it was given, once for each call that changes or renders.
+does not have, a value in the wrong unit or out of range, a patch it refuses, a render it cannot
+produce or with nothing usable. A call the instrument refuses changes nothing and publishes
+nothing; one it carries out publishes `ParameterChanged`, `PatchLoaded` or `RenderCompleted` once,
+on the `EventBus` the instrument was given. A render is `RenderRequest.samples(pattern)` samples
+long.
 
 `Subscriber` is defined in `patchbay.events`, beside the bus that takes it, and exported here too.
 """
@@ -66,5 +68,7 @@ class Instrument(Protocol):
     def render(self, pattern: Pattern, request: RenderRequest, /) -> RenderResult:
         """Render the pattern as the request asks, then publish RenderCompleted.
 
-        A degraded render is a result with warnings; RenderFailedError when nothing is usable.
+        The result is `request.samples(pattern)` samples long, at the request's sample rate. A
+        degraded render is a result with warnings. RenderFailedError, publishing nothing, when
+        nothing usable can be rendered, a render longer than the instrument can produce among it.
         """
