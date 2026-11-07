@@ -4,8 +4,9 @@
 # same ruff the gate runs, through uv run --locked: one pin, one rule set. The hooks run the
 # auto-fixing linter and then the formatter, as ruff recommends, and only those: never mypy or
 # pytest, which are the gate's (scripts/gate.sh), not a commit's. pre-commit itself is pinned in the
-# dev group. Install the git hook once with `uv run pre-commit install`; `uv run pre-commit run
-# --all-files` runs the hooks without one.
+# dev group. Install the git hook once with `uv run --locked pre-commit install`;
+# `uv run --locked pre-commit run --all-files` runs the hooks without one. Every tool runs under
+# --locked (agent-os/standards/base/python/toolchain.md, "One tool per job").
 minimum_pre_commit_version: "4.7.0"
 repos:
   - repo: local

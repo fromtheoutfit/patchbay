@@ -2,14 +2,16 @@
 # nowhere else (no setup.py, setup.cfg, requirements*.txt, tox.ini, .flake8, mypy.ini, pytest.ini
 # or .ruff.toml). .pre-commit-config.yaml beside it registers hooks and configures no tool.
 #
-# Two kinds of section. [project], [build-system] and [dependency-groups] are the package's and
-# change in any spec; adding a dependency is a Decision in that spec's shape.md (what it does, why
-# the standard library cannot, its license). The [tool.*] sections are the gate's: [tool.uv] pins
-# the uv that gate steps 2-5 of scripts/gate.sh run under, [tool.uv.build-backend] names the module
-# step 2's sync installs, and the rest are the rule set those steps read (ruff format, ruff check,
-# mypy, pytest). They are gate files and change only in the gate's own spec, with a person
+# Two kinds of entry. The gate's: the [tool.*] sections, and the pins in [dependency-groups] dev of
+# the tools the gate runs (ruff, mypy and pytest) with what uv.lock resolves for them. [tool.uv]
+# pins the uv that gate steps 2-5 of scripts/gate.sh run under, [tool.uv.build-backend] names the
+# module step 2's sync installs, and the rest are the rule set those steps read (ruff format, ruff
+# check, mypy, pytest). They are gate files and change only in the gate's own spec, with a person
 # (agent-os/standards/base/process/verification-gate.md, "Pinned" and "The gate's own files change
-# only in their own spec").
+# only in their own spec"). The package's: [project], [build-system] and the rest of
+# [dependency-groups] (hypothesis, a test library pytest runs, and pre-commit, which no gate step
+# runs), which change in any spec; adding a dependency is a Decision in that spec's shape.md (what
+# it does, why the standard library cannot, its license).
 
 [project]
 name = "patchbay-core"
@@ -30,20 +32,26 @@ dependencies = []
 requires = ["uv_build>=0.13.7,<0.14.0"]
 build-backend = "uv_build"
 
-# The uv every uv command in this repository runs under; any other uv refuses to run here, so a
-# local `--locked` run and CI's read uv.lock with the same uv (gate step 2's sync fails by name,
-# negative test o). CI's astral-sh/setup-uv reads this key to choose the uv it installs, so the
-# version is written once. Bumped deliberately, in the gate's own spec, and the gate rerun.
+# The uv this repository runs under: any other uv refuses every command that reads this project's
+# settings (uv sync, uv run, uv lock, uv version and uv tree among them; uv --version and uv self
+# version still run; probed with uv 0.13.7 in the gate spec of issues #5-#7), so a local `--locked`
+# run and CI's read uv.lock with the same uv: the gate's first uv command, step 2's
+# `uv sync --locked`, fails by name (negative test o). CI's astral-sh/setup-uv reads this key to
+# choose the uv it installs, so the version is written once. Bumped deliberately, in the gate's own
+# spec, and the gate rerun.
 [tool.uv]
 required-version = "==0.13.7"
 
 [tool.uv.build-backend]
 module-name = "patchbay"
 
-# The tools the gate runs, pinned exactly, each with the date it was published; uv.lock holds the
-# resolution and the gate runs them under `uv run --locked`, so a pin changed here without
-# re-locking fails the gate rather than being rewritten. A pin is bumped deliberately, in the
-# gate's own spec, and the gate rerun. Each is a Decision in the spec that added it.
+# Every entry pinned exactly, each with the date it was published, and resolved in uv.lock; each is
+# a Decision in the spec that added it. ruff, mypy and pytest are the tools the gate runs, under
+# `uv run --locked`, so a pin changed here without re-locking fails the gate rather than being
+# rewritten: they are gate pins, bumped deliberately in the gate's own spec, and the gate rerun.
+# hypothesis (a test library pytest runs) and pre-commit (the local hook runner, which no gate step
+# runs; .pre-commit-config.yaml's minimum_pre_commit_version follows its pin) are the package's,
+# changed in any spec as a Decision there.
 [dependency-groups]
 dev = [
     "ruff==0.17.4",          # published 2026-11-05; linter and formatter, gate steps 2-3
@@ -94,6 +102,8 @@ ignore = [
 # mypy: gate step 4, over the package and the tests.
 [tool.mypy]
 strict = true
+# What a bare `uv run --locked mypy` walks. The gate gives mypy git's list of the .py and .pyi
+# files under these instead (scripts/gate.sh step 4), so it reads exactly the files git lists.
 files = ["src", "tests"]
 # The interpreter the types are checked against, the floor of requires-python.
 python_version = "3.12"
@@ -110,8 +120,9 @@ implicit_reexport = false
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # -q: the gate's transcript is read by a person. --strict-markers: an unregistered marker is a
-# typo, so it fails. --strict-config: a key pytest does not know in this section fails the run,
-# as the gate standard asks of a rule-set config.
+# typo, so it fails. --strict-config: a key pytest does not know in this section fails the run
+# rather than being ignored with a warning (agent-os/standards/base/python/toolchain.md, "pytest
+# and hypothesis"; probed with pytest 9.2.0: exit 4 with the flag, a warning and exit 0 without).
 addopts = "-q --strict-markers --strict-config"
 markers = [
     "integration: needs a running instrument; not selected by the gate until a spec says so",

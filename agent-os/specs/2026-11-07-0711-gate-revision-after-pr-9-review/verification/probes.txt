@@ -1,0 +1,270 @@
+Probes for the gate revision after the review of PR 9, run 2026-11-07 on branch
+feature/5-gate-spec-2-take-patchbay-standards-pr-11s-gate-skeleton-and-harness-changes,
+before any gate file was edited, on an export of the tree as git lists it into a scratch directory
+(<e>), git-inited and git-added, its .venv synced with `uv sync --locked`, so each tool is the
+version uv.lock resolves. Nothing in the tree was written. Each setup is shown (git check-ignore,
+git ls-files, git status --ignored, git ls-files -s) before its result is read.
+
+What they show:
+  1. ruff 0.17.4 given git's list as explicit paths reads a force-added file .gitignore matches
+     (src/patchbay/lib/codec.py, under the tree's lib/ pattern), which its walk of . skipped
+     (finding 3); per-file-ignores keyed on tests/** still apply to an explicit path, and the same
+     file copied outside tests/ is named for S101.
+  2. mypy 2.4.1 given git's list builds the same modules, by the same names, as its walk of
+     files = [src, tests] (patchbay, patchbay.lib.codec, test_version...), and reads and names the
+     force-added module the walk under exclude_gitignore skipped (finding 3).
+  3. pytest 9.2.0 loads an ignored conftest.py in a directory it collects from, --ignore of that
+     file or not, and one at the root; a deselecting one turns a failing run into "6 passed, 1
+     deselected", exit 0 (finding 1). The review's own layout, a whole ignored directory passed as
+     --ignore, did not import its conftest here; the finding stands on the other two. git's ignored
+     list under tests/, without --directory, names each ignored .py (and the __pycache__/ files).
+  4. git 2.54 lists a path in stages 1-3 three times through ls-files --cached, once after
+     sort -zu (finding 5). Entered through its path in upper case, bash 3.2's pwd -P keeps the
+     typed case, so the string comparison with --show-toplevel differs, while --show-cdup is empty
+     (finding 2). On a corrupt index git ls-files exits 128, and a reader of
+     "ls-files | sort -zu && printf '\\0'" under set -euo pipefail sees no empty record, where
+     on the good index it sees one after the records (finding 6).
+
+uv: uv 0.13.7 (Homebrew 2026-11-03 aarch64-apple-darwin); git: git version 2.54.0 (Apple Git-157); bash: 3.2.57(1)-release
+$ uv run --locked ruff --version
+ruff 0.17.4
+exit=0
+$ uv run --locked mypy --version
+mypy 2.4.1 (compiled: yes)
+exit=0
+$ uv run --locked pytest --version
+pytest 9.2.0
+exit=0
+
+## 1. ruff 0.17.4 given git's list as explicit paths
+
+-- setup: src/patchbay/lib/ (the tree's .gitignore ignores lib/) with __init__.py and codec.py, codec.py importing os unused, both force-added, so git lists them:
+$ git check-ignore -v --no-index src/patchbay/lib/codec.py
+.gitignore:17:lib/	src/patchbay/lib/codec.py
+exit=0
+$ git ls-files src/patchbay/lib
+src/patchbay/lib/__init__.py
+src/patchbay/lib/codec.py
+exit=0
+-- git's list of .py/.pyi files, as the gate will read it:
+$ bash -c pylist () 
+{ 
+    git ls-files -z --cached --others --exclude-standard -- "$@" | LC_ALL=C sort -zu | tr '\0' '\n' | grep -E '\.pyi?$'
+}; pylist .
+src/patchbay/__init__.py
+src/patchbay/lib/__init__.py
+src/patchbay/lib/codec.py
+tests/unit/test_package.py
+tests/unit/test_version.py
+exit=0
+-- ruff walking . (the first spec's step 3) skips codec.py; given git's list it reads it:
+$ uv run --locked ruff check .
+All checks passed!
+exit=0
+$ bash -c pylist () 
+{ 
+    git ls-files -z --cached --others --exclude-standard -- "$@" | LC_ALL=C sort -zu | tr '\0' '\n' | grep -E '\.pyi?$'
+}; pylist . | tr '\n' '\0' | xargs -0 uv run --locked ruff check --
+F401 [*] `os` imported but unused
+ --> src/patchbay/lib/codec.py:3:8
+  |
+1 | """A module .gitignore matches."""
+2 |
+3 | import os
+  |        ^^
+help: Remove unused import: `os`
+  |
+2 |
+  - import os
+3 |
+  |
+
+PLC0415 `import` should be at the top-level of a file
+  --> src/patchbay/lib/codec.py:8:5
+   |
+ 6 | def decode() -> int:
+ 7 |     """Return whatever json gives, typed as int."""
+ 8 |     import json
+   |     ^^^^^^^^^^^
+ 9 |
+10 |     return json.loads("1")
+   |
+
+Found 2 errors.
+[*] 1 fixable with `--fix`.
+exit=1
+$ bash -c pylist () 
+{ 
+    git ls-files -z --cached --others --exclude-standard -- "$@" | LC_ALL=C sort -zu | tr '\0' '\n' | grep -E '\.pyi?$'
+}; pylist . | tr '\n' '\0' | xargs -0 uv run --locked ruff format --check --
+5 files already formatted
+exit=0
+-- tests/** per-file-ignores still apply to explicit paths (the tests assert; S101 is ignored there, and named outside it):
+$ uv run --locked ruff check --select S101 -- tests/unit/test_version.py
+All checks passed!
+exit=0
+$ uv run --locked ruff check --select S101 --config pyproject.toml -- <test>_version_copy.py
+S101 Use of `assert` detected
+  --> <test>_version_copy.py:26:5
+   |
+24 |     with (pytestconfig.rootpath / "pyproject.toml").open("rb") as f:
+25 |         project = tomllib.load(f)["project"]
+26 |     assert patchbay.__version__ == project["version"]
+   |     ^^^^^^
+
+S101 Use of `assert` detected
+  --> <test>_version_copy.py:31:5
+   |
+29 | def test_version_is_a_release_segment() -> None:
+30 |     """The version is dotted integers, nothing else."""
+31 |     assert _RELEASE.fullmatch(patchbay.__version__)
+   |     ^^^^^^
+
+S101 Use of `assert` detected
+  --> <test>_version_copy.py:37:5
+   |
+35 | def test_release_pattern_accepts_every_dotted_triple(parts: tuple[int, int, int]) -> None:
+36 |     """Any major.minor.patch of non-negative integers is a release segment."""
+37 |     assert _RELEASE.fullmatch(".".join(str(p) for p in parts))
+   |     ^^^^^^
+
+S101 Use of `assert` detected
+  --> <test>_version_copy.py:44:5
+   |
+42 | def test_release_pattern_rejects_a_non_numeric_segment(segment: str) -> None:
+43 |     """One segment, no dot, not all ASCII digits, is not a release segment, alone or after one."""
+44 |     assert not _RELEASE.fullmatch(segment)
+   |     ^^^^^^
+45 |     assert not _RELEASE.fullmatch(f"1.0.{segment}")
+   |
+
+S101 Use of `assert` detected
+  --> <test>_version_copy.py:45:5
+   |
+43 |     """One segment, no dot, not all ASCII digits, is not a release segment, alone or after one."""
+44 |     assert not _RELEASE.fullmatch(segment)
+45 |     assert not _RELEASE.fullmatch(f"1.0.{segment}")
+   |     ^^^^^^
+
+Found 5 errors.
+exit=1
+
+## 2. mypy 2.4.1 given git's list as explicit files
+
+-- the sources mypy builds, walking files = [src, tests] (no exclude_gitignore in this probe's command) and given git's list of src/ and tests/:
+$ bash -c uv run --locked mypy --no-exclude-gitignore -v 2>&1 | grep -o "Found source: *BuildSource(path=[^,]*, module=[^,]*" | sed "s/Found source: *//"
+BuildSource(path='src/patchbay/__init__.py', module='patchbay'
+BuildSource(path='src/patchbay/lib/__init__.py', module='patchbay.lib'
+BuildSource(path='src/patchbay/lib/codec.py', module='patchbay.lib.codec'
+BuildSource(path='tests/unit/test_package.py', module='test_package'
+BuildSource(path='tests/unit/test_version.py', module='test_version'
+exit=0
+$ bash -c pylist () 
+{ 
+    git ls-files -z --cached --others --exclude-standard -- "$@" | LC_ALL=C sort -zu | tr '\0' '\n' | grep -E '\.pyi?$'
+}; pylist src tests | tr '\n' '\0' | xargs -0 uv run --locked mypy -v -- 2>&1 | grep -o 'Found source: *BuildSource(path=[^,]*, module=[^,]*' | sed 's/Found source: *//'
+BuildSource(path='src/patchbay/__init__.py', module='patchbay'
+BuildSource(path='src/patchbay/lib/__init__.py', module='patchbay.lib'
+BuildSource(path='src/patchbay/lib/codec.py', module='patchbay.lib.codec'
+BuildSource(path='tests/unit/test_package.py', module='test_package'
+BuildSource(path='tests/unit/test_version.py', module='test_version'
+exit=0
+-- with the tree's exclude_gitignore = true, the walk skips the force-added codec.py; git's list reads it and names its error:
+$ uv run --locked mypy
+Success: no issues found in 3 source files
+exit=0
+$ bash -c pylist () 
+{ 
+    git ls-files -z --cached --others --exclude-standard -- "$@" | LC_ALL=C sort -zu | tr '\0' '\n' | grep -E '\.pyi?$'
+}; pylist src tests | tr '\n' '\0' | xargs -0 uv run --locked mypy --
+src/patchbay/lib/codec.py:10: error: Returning Any from function declared to return "int"  [no-any-return]
+Found 1 error in 1 file (checked 5 source files)
+exit=1
+
+## 3. pytest 9.2.0 and a conftest.py git ignores
+
+-- setup: tests/x/conftest.py raising RuntimeError, tests/x/ ignored by a line appended to the export's .gitignore, the whole directory then passed as --ignore (the review's layout; here the conftest is not imported, so the cases after it carry the finding):
+$ git status --short --ignored tests
+A  tests/unit/test_package.py
+A  tests/unit/test_version.py
+!! tests/x/
+exit=0
+$ uv run --locked pytest --ignore=tests/x/
+......                                                                   [100%]
+6 passed in 0.97s
+exit=0
+-- an ignored conftest.py at the root, the same content: pytest loads it, though nothing under tests/ is ignored:
+$ git status --short --ignored conftest.py
+!! conftest.py
+exit=0
+$ uv run --locked pytest
+ImportError while loading conftest '<e>/conftest.py'.
+conftest.py:1: in <module>
+    raise RuntimeError("an ignored root conftest was imported")
+E   RuntimeError: an ignored root conftest was imported
+exit=4
+-- a tracked failing test, and an ignored tests/unit/conftest.py that deselects it, passed to pytest as --ignore (the first spec's step 5): pytest loads the conftest of a directory it collects from, --ignore or not, and the failing run passes:
+$ git status --short --ignored tests
+A  tests/unit/test_broken_assertion.py
+A  tests/unit/test_package.py
+A  tests/unit/test_version.py
+!! tests/unit/__pycache__/
+!! tests/unit/conftest.py
+exit=0
+$ uv run --locked pytest
+......                                                                   [100%]
+6 passed, 1 deselected in 0.10s
+exit=0
+$ uv run --locked pytest --ignore=tests/unit/conftest.py
+......                                                                   [100%]
+6 passed, 1 deselected in 0.10s
+exit=0
+-- what git ignores under tests/ and at the root's conftest.py, without --directory (each file, so a .py among them is seen by its name):
+$ bash -c git ls-files -z --others --ignored --exclude-standard -- tests conftest.py | tr "\0" "\n"
+tests/unit/__pycache__/conftest.cpython-312-pytest-9.2.0.pyc
+tests/unit/__pycache__/test_broken_assertion.cpython-312-pytest-9.2.0.pyc
+tests/unit/__pycache__/test_package.cpython-312-pytest-9.2.0.pyc
+tests/unit/__pycache__/test_version.cpython-312-pytest-9.2.0.pyc
+tests/unit/conftest.py
+exit=0
+
+## 4. git 2.54 and bash 3.2: a conflicted path, the work-tree top in another case, a listing that fails
+
+-- setup: scripts/conflict.sh in the working tree, its index entry replaced by stages 1, 2 and 3, as a three-way merge conflict leaves it:
+$ git ls-files -s scripts/conflict.sh
+100755 3c769421807b0d7d9df84adf32b68abe4519039f 1	scripts/conflict.sh
+100755 3c769421807b0d7d9df84adf32b68abe4519039f 2	scripts/conflict.sh
+100755 3c769421807b0d7d9df84adf32b68abe4519039f 3	scripts/conflict.sh
+exit=0
+$ bash -c git ls-files -z --cached --others --exclude-standard -- scripts | tr "\0" "\n"
+scripts/conflict.sh
+scripts/conflict.sh
+scripts/conflict.sh
+scripts/gate-negative-tests.sh
+scripts/gate.sh
+scripts/sync-standards.sh
+exit=0
+$ bash -c git ls-files -z --cached --others --exclude-standard -- scripts | LC_ALL=C sort -zu | tr "\0" "\n"
+scripts/conflict.sh
+scripts/gate-negative-tests.sh
+scripts/gate.sh
+scripts/sync-standards.sh
+exit=0
+-- the export entered through its path in upper case (the file system here is case-insensitive if this cd succeeds):
+$ bash -c cd "$0" && echo "pwd -P:       $(pwd -P)" && echo "show-toplevel: $(git rev-parse --show-toplevel)" && echo "show-cdup:     [$(git rev-parse --show-cdup)]" && { [ "$(git rev-parse --show-toplevel)" = "$(pwd -P)" ] && echo "string compare: equal" || echo "string compare: differ"; } <E, the same path in upper case>
+pwd -P:       <E, the same path in upper case>
+show-toplevel: <e>
+show-cdup:     []
+string compare: differ
+exit=0
+-- a listing that fails: the index overwritten with garbage; git ls-files exits non-zero, and the empty record printed after sort -zu && is absent from what the process substitution yields, under set -euo pipefail:
+$ bash <reader>.sh
+records: 3; empty record seen: 1
+exit=0
+$ git ls-files -- scripts
+fatal: .git/index: index file smaller than expected
+exit=128
+$ bash <reader>.sh
+fatal: .git/index: index file smaller than expected
+records: 0; empty record seen: no
+exit=0
