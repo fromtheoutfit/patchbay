@@ -1,0 +1,716 @@
+Probes of pydantic, numpy and mypy at the versions uv.lock resolves, run 2026-11-07 on branch
+feature/10-contracts-instrument-protocol-models-errors-events-and-the-fakeinstrument-reference-implementation, before any of the spec's modules was written. Each probe is a scratch
+script outside the repository (the session's scratchpad, shown here as probes/<name>.py), run from
+the repository root through the locked environment: python as `uv run --locked python <script>`,
+mypy as `uv run --locked mypy <script>`, so mypy reads this repository's [tool.mypy] (strict,
+3.12, warn_unreachable) and checks the one file named. Each script's source is shown before its
+output, so the setup can be read; each case prints its label and either "ok -> <result>" or the
+exception's type and first lines. The cases are chosen to tell the competing claims apart: the
+refusal beside the acceptance, the Python input beside the JSON, the form chosen beside the one
+not chosen.
+
+Versions: python 3.12.16, pydantic 2.14.3, pydantic-core 2.50.4, numpy 2.5.4, mypy 2.4.1 (compiled: yes).
+
+What the design took from them (shape.md, Decisions):
+
+- runtime.py 1-2: a Mapping field validates to a dict, mutable inside a frozen model, unhashable;
+  held as MappingProxyType it refuses item assignment, and pydantic cannot serialize it without
+  the wrap serializer (PydanticSerializationError), which hands it a plain dict and round-trips.
+- runtime.py 3: bytes in JSON default to utf8 and fail on non-UTF-8 bytes; base64 round-trips any
+  bytes, empty included.
+- runtime.py 4: an NDArray[np.float32] arbitrary-type field is an isinstance check of ndarray (a
+  float64 array passes, so the dtype needs its own validator); == on two models holding distinct
+  arrays raises ValueError, hash raises TypeError, model_dump_json raises; writeable=False makes
+  the array refuse assignment.
+- runtime.py 5, strict_nested.py, config_form.py: strict admits an int for a float in Python and
+  JSON input and refuses a str for a float, int, bytes or enum, a bool for an int, an int for a
+  bool, a float for an int, a list for a tuple, a bytearray for bytes, NaN and inf. Two results
+  differed from the plan and went to the owner: a dict for a nested model is accepted in Python
+  input, every field inside it still strict (a str for a float or an enum, a bool for a float,
+  refused at depth); and model_validate_strings parses "0.5" as a float, its purpose. The owner
+  accepted both as pydantic's strict. pydantic.InstanceOf would have required instances; not used.
+- runtime.py 6: assignment to and deletion of a frozen model's field raise pydantic's
+  ValidationError, a ValueError subclass: PatchbayModel wraps __setattr__ and __delattr__.
+- runtime.py 7: runtime_checkable isinstance accepts a data member as an attribute or a property
+  and refuses an object missing one; issubclass is refused for a Protocol with a data member; any
+  callable, of any arity, is an instance of a callable Protocol.
+- typing_probe.py: a base model that overrides __init__(self, /, **data: object) still leaves
+  mypy a synthesized, typed, keyword-only __init__ on each subclass (A, B, J); mypy does not see
+  frozen set through model_config (C passes) but does through the class keyword (D); PresetKey
+  and str are refused where ParameterId is expected (E, F); a PEP 695 Subscriber[E: Event] is
+  contravariant (G accepted, I refused) and its positional-only parameter frees the handler's name
+  (H).
+- frozen_kw.py, frozen_kw2.py, config_form.py: with frozen=True as the base's class keyword, mypy
+  refuses a subclass that does not repeat it ("Non-frozen dataclass cannot inherit from a frozen
+  dataclass"); repeated on each, mypy refuses assignment (K, L, N) and the __init__ stays typed
+  (M). The class keyword and model_config merge at runtime. The owner chose the class keyword on
+  every model. config_form.py's last line assigns on purpose: mypy refuses it (the error below),
+  and at runtime it raises, so its traceback closes that script's output.
+
+================================================================================
+probes/runtime.py
+================================================================================
+
+$ cat probes/runtime.py
+"""Runtime probes of pydantic and numpy at the locked versions, for issue #10's design."""
+
+import enum
+import json
+import warnings
+from collections.abc import Mapping
+from types import MappingProxyType
+from typing import Any, Protocol, runtime_checkable
+
+import numpy as np
+import pydantic
+import pydantic_core
+from numpy.typing import NDArray
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_serializer, field_validator
+
+print(f"pydantic {pydantic.VERSION}, pydantic-core {pydantic_core.__version__}, numpy {np.__version__}")
+warnings.simplefilter("error")  # a serializer warning becomes a failure the probe reports
+
+
+def case(label: str, fn: Any) -> None:
+    try:
+        out = fn()
+        print(f"  {label}: ok -> {out!r}")
+    except Exception as e:  # noqa: BLE001
+        first = str(e).splitlines()[0] if str(e) else ""
+        print(f"  {label}: {type(e).__module__}.{type(e).__name__}: {first}")
+
+
+class Unit(enum.StrEnum):
+    none = "none"
+    ratio = "ratio"
+
+
+print("\n1. A Mapping field, lax and frozen: what it validates to")
+class LaxMap(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    values: Mapping[str, int]
+m = LaxMap(values={"a": 1})
+print(f"  type(values) = {type(m.values).__name__}")
+case("values['b'] = 2 on a frozen model", lambda: (m.values.__setitem__("b", 2), dict(m.values))[1])  # type: ignore[attr-defined]
+case("hash(model holding a dict)", lambda: hash(m))
+case("model.values = {} (attribute assignment)", lambda: setattr(m, "values", {}))
+case("del model.values", lambda: delattr(m, "values"))
+
+
+print("\n2. MappingProxyType after an after-validator, with and without a wrap serializer")
+class ProxyNoSer(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    values: Mapping[str, int]
+    @field_validator("values", mode="after")
+    @classmethod
+    def _ro(cls, v: Mapping[str, int]) -> Mapping[str, int]:
+        return MappingProxyType(dict(sorted(v.items())))
+p0 = ProxyNoSer(values={"b": 2, "a": 1})
+print(f"  type(values) = {type(p0.values).__name__}")
+case("values['c'] = 3", lambda: p0.values.__setitem__("c", 3))  # type: ignore[attr-defined]
+case("model_dump_json() without a serializer (warnings are errors)", lambda: p0.model_dump_json())
+
+class ProxySer(ProxyNoSer):
+    @field_serializer("values", mode="wrap")
+    def _plain(self, v: Mapping[str, int], handler: Any) -> Any:
+        return handler(dict(v))
+p1 = ProxySer(values={"b": 2, "a": 1})
+case("model_dump_json() with a wrap serializer", lambda: p1.model_dump_json())
+case("model_dump() with a wrap serializer", lambda: p1.model_dump())
+case("round trip equal", lambda: ProxySer.model_validate_json(p1.model_dump_json()) == p1)
+case("ProxySer(values=p1.values) (a mappingproxy as input, lax)", lambda: ProxySer(values=p1.values).values)
+
+
+print("\n3. bytes in JSON: the default (utf8) and base64")
+class BytesUtf8(BaseModel):
+    opaque: Mapping[str, bytes]
+class BytesB64(BaseModel):
+    model_config = ConfigDict(ser_json_bytes="base64", val_json_bytes="base64")
+    opaque: Mapping[str, bytes]
+raw = bytes([0xFF, 0x00, 0x80, 0x0A])
+case("utf8 default: dump non-UTF-8 bytes", lambda: BytesUtf8(opaque={"k": raw}).model_dump_json())
+case("base64: dump", lambda: BytesB64(opaque={"k": raw}).model_dump_json())
+case("base64: round trip byte-for-byte", lambda: BytesB64.model_validate_json(BytesB64(opaque={"k": raw}).model_dump_json()).opaque["k"] == raw)
+case("base64: empty bytes round trip", lambda: BytesB64.model_validate_json(BytesB64(opaque={"k": b""}).model_dump_json()).opaque["k"] == b"")
+
+
+print("\n4. An NDArray[np.float32] arbitrary-type field: schema, check, ==, hash")
+class Arr(BaseModel):
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
+    audio: NDArray[np.float32]
+a = np.zeros((1, 4), dtype=np.float32)
+case("build with a float32 (1,4) array", lambda: Arr(audio=a).audio.shape)
+case("build with a float64 array (no dtype validator yet)", lambda: Arr(audio=np.zeros((1, 4))).audio.dtype)
+case("build with a list", lambda: Arr(audio=[[0.0]]))
+case("Arr(a) == Arr(a.copy())", lambda: Arr(audio=a) == Arr(audio=a.copy()))
+case("Arr(a) == Arr(a) (same object)", lambda: Arr(audio=a) == Arr(audio=a))
+case("hash(Arr(a))", lambda: hash(Arr(audio=a)))
+case("model_dump_json()", lambda: Arr(audio=a).model_dump_json())
+b = a.copy(); b.flags.writeable = False
+case("write into an array marked writeable=False", lambda: b.__setitem__((0, 0), 1.0))
+
+
+print("\n5. Strict mode: what it admits and refuses, Python and JSON input")
+class Inner(BaseModel):
+    model_config = ConfigDict(strict=True, frozen=True)
+    value: float
+class S(BaseModel):
+    model_config = ConfigDict(strict=True, frozen=True, allow_inf_nan=False,
+                              ser_json_bytes="base64", val_json_bytes="base64")
+    f: float = 0.0
+    i: int = 0
+    b: bool = False
+    u: Unit = Unit.none
+    t: tuple[str, ...] = ()
+    inner: Inner = Inner(value=0.0)
+    m: Mapping[str, Inner] = Field(default_factory=dict)
+    raw: bytes = b""
+case("python: f=1 (int for float)", lambda: S(f=1).f)
+case("json:   f=1 (int for float)", lambda: S.model_validate_json('{"f": 1}').f)
+case("python: f='0.5' (str for float)", lambda: S(f="0.5"))  # type: ignore[arg-type]
+case("json:   f='0.5' (str for float)", lambda: S.model_validate_json('{"f": "0.5"}'))
+case("python: i='1' (str for int)", lambda: S(i="1"))  # type: ignore[arg-type]
+case("python: i=1.0 (float for int)", lambda: S(i=1.0))  # type: ignore[arg-type]
+case("json:   i=1.0 (float for int)", lambda: S.model_validate_json('{"i": 1.0}'))
+case("python: i=True (bool for int)", lambda: S(i=True).i)
+case("json:   i=true (bool for int)", lambda: S.model_validate_json('{"i": true}'))
+case("python: b=1 (int for bool)", lambda: S(b=1))  # type: ignore[arg-type]
+case("json:   b=1 (int for bool)", lambda: S.model_validate_json('{"b": 1}'))
+case("python: u='ratio' (str for Unit)", lambda: S(u="ratio"))  # type: ignore[arg-type]
+case("python: u=Unit.ratio", lambda: S(u=Unit.ratio).u)
+case("json:   u='ratio'", lambda: S.model_validate_json('{"u": "ratio"}').u)
+case("json:   u='nope'", lambda: S.model_validate_json('{"u": "nope"}'))
+case("python: t=['a'] (list for tuple)", lambda: S(t=["a"]))  # type: ignore[arg-type]
+case("json:   t=['a'] (array for tuple)", lambda: S.model_validate_json('{"t": ["a"]}').t)
+case("python: inner={'value': 1.0} (dict for model)", lambda: S(inner={"value": 1.0}))  # type: ignore[arg-type]
+case("json:   inner={'value': 1.0}", lambda: S.model_validate_json('{"inner": {"value": 1.0}}').inner)
+case("python: model_validate({'inner': {'value': 1.0}})", lambda: S.model_validate({"inner": {"value": 1.0}}))
+case("python: m=dict of Inner", lambda: S(m={"k": Inner(value=1.0)}).m)
+case("python: m=MappingProxyType of Inner", lambda: S(m=MappingProxyType({"k": Inner(value=1.0)})).m)
+case("python: f=nan", lambda: S(f=float("nan")))
+case("json:   raw base64 'AP8='", lambda: S.model_validate_json('{"raw": "AP8="}').raw)
+case("python: raw='x' (str for bytes)", lambda: S(raw="x"))  # type: ignore[arg-type]
+case("python: raw=bytearray", lambda: S(raw=bytearray(b"x")))  # type: ignore[arg-type]
+case("model_validate_strings({'f': '0.5'})", lambda: S.model_validate_strings({"f": "0.5"}).f)
+
+
+print("\n6. A frozen model's assignment and deletion")
+q = Inner(value=1.0)
+case("q.value = 2.0", lambda: setattr(q, "value", 2.0))
+case("del q.value", lambda: delattr(q, "value"))
+print(f"  issubclass(ValidationError, ValueError) = {issubclass(ValidationError, ValueError)}")
+
+
+print("\n7. runtime_checkable with a property member")
+@runtime_checkable
+class Named(Protocol):
+    @property
+    def name(self) -> str: ...
+    def get(self, key: str, /) -> int: ...
+class HasAttr:
+    name = "x"
+    def get(self, key: str, /) -> int: return 0
+class HasProp:
+    @property
+    def name(self) -> str: return "x"
+    def get(self, key: str, /) -> int: return 0
+class Missing:
+    def get(self, key: str, /) -> int: return 0
+case("isinstance(HasAttr(), Named)", lambda: isinstance(HasAttr(), Named))
+case("isinstance(HasProp(), Named)", lambda: isinstance(HasProp(), Named))
+case("isinstance(Missing(), Named)", lambda: isinstance(Missing(), Named))
+case("issubclass(HasAttr, Named)", lambda: issubclass(HasAttr, Named))
+@runtime_checkable
+class Sub[E](Protocol):
+    def __call__(self, event: E, /) -> None: ...
+case("isinstance(print, Sub)", lambda: isinstance(print, Sub))
+case("isinstance(lambda: None, Sub) (wrong arity)", lambda: isinstance(lambda: None, Sub))
+case("isinstance(1, Sub)", lambda: isinstance(1, Sub))
+
+$ uv run --locked python probes/runtime.py
+pydantic 2.14.3, pydantic-core 2.50.4, numpy 2.5.4
+
+1. A Mapping field, lax and frozen: what it validates to
+  type(values) = dict
+  values['b'] = 2 on a frozen model: ok -> {'a': 1, 'b': 2}
+  hash(model holding a dict): builtins.TypeError: unhashable type: 'dict'
+  model.values = {} (attribute assignment): pydantic_core._pydantic_core.ValidationError: 1 validation error for LaxMap
+  del model.values: pydantic_core._pydantic_core.ValidationError: 1 validation error for LaxMap
+
+2. MappingProxyType after an after-validator, with and without a wrap serializer
+  type(values) = mappingproxy
+  values['c'] = 3: builtins.AttributeError: 'mappingproxy' object has no attribute '__setitem__'
+  model_dump_json() without a serializer (warnings are errors): pydantic_core._pydantic_core.PydanticSerializationError: Unable to serialize unknown type: <class 'mappingproxy'>
+  model_dump_json() with a wrap serializer: ok -> '{"values":{"a":1,"b":2}}'
+  model_dump() with a wrap serializer: ok -> {'values': {'a': 1, 'b': 2}}
+  round trip equal: ok -> True
+  ProxySer(values=p1.values) (a mappingproxy as input, lax): ok -> mappingproxy({'a': 1, 'b': 2})
+
+3. bytes in JSON: the default (utf8) and base64
+  utf8 default: dump non-UTF-8 bytes: pydantic_core._pydantic_core.PydanticSerializationError: Error serializing to JSON: invalid utf-8 sequence of 1 bytes from index 0
+  base64: dump: ok -> '{"opaque":{"k":"_wCACg=="}}'
+  base64: round trip byte-for-byte: ok -> True
+  base64: empty bytes round trip: ok -> True
+
+4. An NDArray[np.float32] arbitrary-type field: schema, check, ==, hash
+  build with a float32 (1,4) array: ok -> (1, 4)
+  build with a float64 array (no dtype validator yet): ok -> dtype('float64')
+  build with a list: pydantic_core._pydantic_core.ValidationError: 1 validation error for Arr
+  Arr(a) == Arr(a.copy()): builtins.ValueError: The truth value of an array with more than one element is ambiguous. Use a.any() or a.all()
+  Arr(a) == Arr(a) (same object): ok -> True
+  hash(Arr(a)): builtins.TypeError: unhashable type: 'numpy.ndarray'
+  model_dump_json(): pydantic_core._pydantic_core.PydanticSerializationError: Unable to serialize unknown type: <class 'numpy.ndarray'>
+  write into an array marked writeable=False: builtins.ValueError: assignment destination is read-only
+
+5. Strict mode: what it admits and refuses, Python and JSON input
+  python: f=1 (int for float): ok -> 1.0
+  json:   f=1 (int for float): ok -> 1.0
+  python: f='0.5' (str for float): pydantic_core._pydantic_core.ValidationError: 1 validation error for S
+  json:   f='0.5' (str for float): pydantic_core._pydantic_core.ValidationError: 1 validation error for S
+  python: i='1' (str for int): pydantic_core._pydantic_core.ValidationError: 1 validation error for S
+  python: i=1.0 (float for int): pydantic_core._pydantic_core.ValidationError: 1 validation error for S
+  json:   i=1.0 (float for int): pydantic_core._pydantic_core.ValidationError: 1 validation error for S
+  python: i=True (bool for int): pydantic_core._pydantic_core.ValidationError: 1 validation error for S
+  json:   i=true (bool for int): pydantic_core._pydantic_core.ValidationError: 1 validation error for S
+  python: b=1 (int for bool): pydantic_core._pydantic_core.ValidationError: 1 validation error for S
+  json:   b=1 (int for bool): pydantic_core._pydantic_core.ValidationError: 1 validation error for S
+  python: u='ratio' (str for Unit): pydantic_core._pydantic_core.ValidationError: 1 validation error for S
+  python: u=Unit.ratio: ok -> <Unit.ratio: 'ratio'>
+  json:   u='ratio': ok -> <Unit.ratio: 'ratio'>
+  json:   u='nope': pydantic_core._pydantic_core.ValidationError: 1 validation error for S
+  python: t=['a'] (list for tuple): pydantic_core._pydantic_core.ValidationError: 1 validation error for S
+  json:   t=['a'] (array for tuple): ok -> ('a',)
+  python: inner={'value': 1.0} (dict for model): ok -> S(f=0.0, i=0, b=False, u=<Unit.none: 'none'>, t=(), inner=Inner(value=1.0), m={}, raw=b'')
+  json:   inner={'value': 1.0}: ok -> Inner(value=1.0)
+  python: model_validate({'inner': {'value': 1.0}}): ok -> S(f=0.0, i=0, b=False, u=<Unit.none: 'none'>, t=(), inner=Inner(value=1.0), m={}, raw=b'')
+  python: m=dict of Inner: ok -> {'k': Inner(value=1.0)}
+  python: m=MappingProxyType of Inner: ok -> {'k': Inner(value=1.0)}
+  python: f=nan: pydantic_core._pydantic_core.ValidationError: 1 validation error for S
+  json:   raw base64 'AP8=': ok -> b'\x00\xff'
+  python: raw='x' (str for bytes): pydantic_core._pydantic_core.ValidationError: 1 validation error for S
+  python: raw=bytearray: pydantic_core._pydantic_core.ValidationError: 1 validation error for S
+  model_validate_strings({'f': '0.5'}): ok -> 0.5
+
+6. A frozen model's assignment and deletion
+  q.value = 2.0: pydantic_core._pydantic_core.ValidationError: 1 validation error for Inner
+  del q.value: pydantic_core._pydantic_core.ValidationError: 1 validation error for Inner
+  issubclass(ValidationError, ValueError) = True
+
+7. runtime_checkable with a property member
+  isinstance(HasAttr(), Named): ok -> True
+  isinstance(HasProp(), Named): ok -> True
+  isinstance(Missing(), Named): ok -> False
+  issubclass(HasAttr, Named): builtins.TypeError: Protocols with non-method members don't support issubclass()
+  isinstance(print, Sub): ok -> True
+  isinstance(lambda: None, Sub) (wrong arity): ok -> True
+  isinstance(1, Sub): ok -> False
+exit=0
+
+================================================================================
+probes/typing_probe.py
+================================================================================
+
+$ cat probes/typing_probe.py
+"""mypy probes (strict, the project's [tool.mypy]) for issue #10's design."""
+
+from typing import NewType, Protocol, runtime_checkable
+
+from pydantic import BaseModel, ConfigDict, ValidationError
+
+
+class Base(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
+
+    def __init__(self, /, **data: object) -> None:
+        try:
+            super().__init__(**data)
+        except ValidationError as error:
+            raise RuntimeError(str(error)) from error
+
+
+class Quantity(Base):
+    value: float
+    unit: str
+
+
+class KwFrozen(BaseModel, frozen=True):
+    value: float
+
+
+Quantity(value=1.0, unit="hz")
+Quantity(value="x", unit="hz")  # A: should be refused if __init__ is synthesized per field
+Quantity(valu=1.0, unit="hz")  # B: should be refused (unknown keyword)
+q = Quantity(value=1.0, unit="hz")
+q.value = 2.0  # C: refused only if mypy sees frozen through model_config
+k = KwFrozen(value=1.0)
+k.value = 2.0  # D: refused if mypy sees the class keyword frozen=True
+
+ParameterId = NewType("ParameterId", str)
+PresetKey = NewType("PresetKey", str)
+
+
+def take(pid: ParameterId) -> None: ...
+
+
+take(PresetKey("x"))  # E: refused
+take("x")  # F: refused
+
+
+class Event:
+    pass
+
+
+class Changed(Event):
+    pass
+
+
+@runtime_checkable
+class Subscriber[E: Event](Protocol):
+    def __call__(self, event: E, /) -> None: ...
+
+
+def on_any(event: Event) -> None: ...
+def on_changed(e: Changed) -> None: ...
+
+
+def want_changed(s: Subscriber[Changed]) -> None: ...
+def want_any(s: Subscriber[Event]) -> None: ...
+
+
+want_changed(on_any)  # G: accepted (contravariant)
+want_changed(on_changed)  # H: accepted; the parameter's name differs from the Protocol's
+want_any(on_changed)  # I: refused
+reveal_type(Quantity.__init__)  # J
+
+$ uv run --locked mypy probes/typing_probe.py
+probes/typing_probe.py:28: error: Argument "value" to "Quantity" has incompatible type "str"; expected "float"  [arg-type]
+probes/typing_probe.py:29: error: Unexpected keyword argument "valu" for "Quantity"; did you mean "value"?  [call-arg]
+probes/typing_probe.py:33: error: Property "value" defined in "KwFrozen" is read-only  [misc]
+probes/typing_probe.py:42: error: Argument 1 to "take" has incompatible type "PresetKey"; expected "ParameterId"  [arg-type]
+probes/typing_probe.py:43: error: Argument 1 to "take" has incompatible type "str"; expected "ParameterId"  [arg-type]
+probes/typing_probe.py:69: error: Argument 1 to "want_any" has incompatible type "Callable[[Changed], None]"; expected "Subscriber[Event]"  [arg-type]
+probes/typing_probe.py:69: note: "Subscriber[Event].__call__" has type "Callable[[Event], None]"
+probes/typing_probe.py:70: note: Revealed type is "def (self: typing_probe.Quantity, *, value: float, unit: str)"
+Found 6 errors in 1 file (checked 1 source file)
+exit=1
+
+================================================================================
+probes/strict_nested.py
+================================================================================
+
+$ cat probes/strict_nested.py
+"""Strict mode and nested models: dict input in Python mode, and pydantic.InstanceOf."""
+
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, InstanceOf
+
+
+def case(label: str, fn: Any) -> None:
+    try:
+        print(f"  {label}: ok -> {fn()!r}")
+    except Exception as e:  # noqa: BLE001
+        print(f"  {label}: {type(e).__name__}: {str(e).splitlines()[0]} | {str(e).splitlines()[1:3]}")
+
+
+class Inner(BaseModel):
+    model_config = ConfigDict(strict=True, frozen=True)
+    value: float
+
+
+class Outer(BaseModel):
+    model_config = ConfigDict(strict=True, frozen=True)
+    inner: Inner
+    many: tuple[Inner, ...] = ()
+
+
+class OuterInstance(BaseModel):
+    model_config = ConfigDict(strict=True, frozen=True)
+    inner: InstanceOf[Inner]
+
+
+print("1. strict, a dict for a nested model (Python mode)")
+case("Outer(inner={'value': 1.0})", lambda: Outer(inner={"value": 1.0}))  # type: ignore[arg-type]
+case("Outer(inner={'value': '0.5'}) (the inner field still strict?)", lambda: Outer(inner={"value": "0.5"}))  # type: ignore[arg-type]
+case("Outer(inner={'value': 1}) (int for float inside)", lambda: Outer(inner={"value": 1}))  # type: ignore[arg-type]
+case("Outer(inner=Inner(value=1.0), many=({'value': 2.0},))", lambda: Outer(inner=Inner(value=1.0), many=({"value": 2.0},)))  # type: ignore[arg-type]
+case("Outer.model_validate({'inner': {'value': 1.0}})", lambda: Outer.model_validate({"inner": {"value": 1.0}}))
+case("Outer.model_validate({'inner': {'value': True}}) (bool for float inside)", lambda: Outer.model_validate({"inner": {"value": True}}))
+print("2. strict, ConfigDict(strict=True) on the outer only: does the inner inherit strict?")
+class LaxInner(BaseModel):
+    value: float
+class StrictOuterLaxInner(BaseModel):
+    model_config = ConfigDict(strict=True)
+    inner: LaxInner
+case("StrictOuterLaxInner(inner={'value': '0.5'})", lambda: StrictOuterLaxInner(inner={"value": "0.5"}))  # type: ignore[arg-type]
+print("3. InstanceOf[Inner]")
+case("OuterInstance(inner={'value': 1.0}) (Python mode)", lambda: OuterInstance(inner={"value": 1.0}))  # type: ignore[arg-type]
+case("OuterInstance(inner=Inner(value=1.0))", lambda: OuterInstance(inner=Inner(value=1.0)))
+case("OuterInstance.model_validate_json('{\"inner\": {\"value\": 1.0}}')", lambda: OuterInstance.model_validate_json('{"inner": {"value": 1.0}}'))
+case("OuterInstance.model_validate_json(... value '0.5')", lambda: OuterInstance.model_validate_json('{"inner": {"value": "0.5"}}'))
+case("round trip", lambda: OuterInstance.model_validate_json(OuterInstance(inner=Inner(value=1.0)).model_dump_json()))
+print("4. model_validate_strings under strict")
+case("Inner.model_validate_strings({'value': '0.5'})", lambda: Inner.model_validate_strings({"value": "0.5"}))
+case("Inner.model_validate_strings({'value': 'x'})", lambda: Inner.model_validate_strings({"value": "x"}))
+
+$ uv run --locked python probes/strict_nested.py
+1. strict, a dict for a nested model (Python mode)
+  Outer(inner={'value': 1.0}): ok -> Outer(inner=Inner(value=1.0), many=())
+  Outer(inner={'value': '0.5'}) (the inner field still strict?): ValidationError: 1 validation error for Outer | ['inner.value', "  Input should be a valid number [type=float_type, input_value='0.5', input_type=str]"]
+  Outer(inner={'value': 1}) (int for float inside): ok -> Outer(inner=Inner(value=1.0), many=())
+  Outer(inner=Inner(value=1.0), many=({'value': 2.0},)): ok -> Outer(inner=Inner(value=1.0), many=(Inner(value=2.0),))
+  Outer.model_validate({'inner': {'value': 1.0}}): ok -> Outer(inner=Inner(value=1.0), many=())
+  Outer.model_validate({'inner': {'value': True}}) (bool for float inside): ValidationError: 1 validation error for Outer | ['inner.value', '  Input should be a valid number [type=float_type, input_value=True, input_type=bool]']
+2. strict, ConfigDict(strict=True) on the outer only: does the inner inherit strict?
+  StrictOuterLaxInner(inner={'value': '0.5'}): ok -> StrictOuterLaxInner(inner=LaxInner(value=0.5))
+3. InstanceOf[Inner]
+  OuterInstance(inner={'value': 1.0}) (Python mode): ValidationError: 1 validation error for OuterInstance | ['inner', "  Input should be an instance of Inner [type=is_instance_of, input_value={'value': 1.0}, input_type=dict]"]
+  OuterInstance(inner=Inner(value=1.0)): ok -> OuterInstance(inner=Inner(value=1.0))
+  OuterInstance.model_validate_json('{"inner": {"value": 1.0}}'): ok -> OuterInstance(inner=Inner(value=1.0))
+  OuterInstance.model_validate_json(... value '0.5'): ValidationError: 1 validation error for OuterInstance | ['inner.value', "  Input should be a valid number [type=float_type, input_value='0.5', input_type=str]"]
+  round trip: ok -> OuterInstance(inner=Inner(value=1.0))
+4. model_validate_strings under strict
+  Inner.model_validate_strings({'value': '0.5'}): ok -> Inner(value=0.5)
+  Inner.model_validate_strings({'value': 'x'}): ValidationError: 1 validation error for Inner | ['value', "  Input should be a valid number, unable to parse string as a number [type=float_parsing, input_value='x', input_type=str]"]
+exit=0
+
+================================================================================
+probes/frozen_kw.py
+================================================================================
+
+$ cat probes/frozen_kw.py
+"""Does mypy see a frozen=True class keyword on the base from a subclass?"""
+from pydantic import BaseModel, ConfigDict
+
+
+class Base(BaseModel, frozen=True, extra="forbid", strict=True):
+    def __init__(self, /, **data: object) -> None:
+        super().__init__(**data)
+
+
+class Sub(Base):
+    value: float
+
+
+class Sub2(Sub):
+    other: float
+
+
+s = Sub(value=1.0)
+s.value = 2.0  # K: refused if frozen is inherited statically
+t = Sub2(value=1.0, other=2.0)
+t.other = 3.0  # L
+reveal_type(Sub.model_config)
+
+$ uv run --locked mypy probes/frozen_kw.py
+probes/frozen_kw.py:10: error: Non-frozen dataclass cannot inherit from a frozen dataclass  [misc]
+probes/frozen_kw.py:14: error: Non-frozen dataclass cannot inherit from a frozen dataclass  [misc]
+probes/frozen_kw.py:22: note: Revealed type is "TypedDict(pydantic.config.ConfigDict, {'alias_generator'?: (def (str) -> str) | pydantic.aliases.AliasGenerator | None, 'allow_inf_nan'?: bool, 'arbitrary_types_allowed'?: bool, 'cache_strings'?: bool | Literal['all'] | Literal['keys'] | Literal['none'], 'coerce_numbers_to_str'?: bool, 'defer_build'?: bool, 'extra'?: Literal['allow'] | Literal['ignore'] | Literal['forbid'] | None, 'field_title_generator'?: (def (str, pydantic.fields.FieldInfo | pydantic.fields.ComputedFieldInfo) -> str) | None, 'from_attributes'?: bool, 'frozen'?: bool, 'hide_input_in_errors'?: bool, 'ignored_types'?: tuple[type, ...], 'json_encoders'?: dict[type[object], def (Any) -> Any] | None, 'json_schema_extra'?: dict[str, int | float | str | bool | None | list[...] | ...] | (def (dict[str, int | float | str | bool | None | list[...] | ...])) | (def (dict[str, int | float | str | bool | None | list[...] | ...], type[Any])) | None, 'json_schema_mode_override'?: Literal['validation'] | Literal['serialization'] | None, 'json_schema_serialization_defaults_required'?: bool, 'loc_by_alias'?: bool, 'model_title_generator'?: (def (type) -> str) | None, 'plugin_settings'?: dict[str, object] | None, 'polymorphic_serialization'?: bool, 'populate_by_name'?: bool, 'protected_namespaces'?: tuple[str | re.Pattern[str], ...], 'regex_engine'?: Literal['rust-regex'] | Literal['python-re'], 'revalidate_instances'?: Literal['always'] | Literal['never'] | Literal['subclass-instances'], 'schema_generator'?: type[pydantic._internal._generate_schema.GenerateSchema] | None, 'ser_json_bytes'?: Literal['utf8'] | Literal['base64'] | Literal['hex'], 'ser_json_inf_nan'?: Literal['null'] | Literal['constants'] | Literal['strings'], 'ser_json_temporal'?: Literal['iso8601'] | Literal['seconds'] | Literal['milliseconds'], 'ser_json_timedelta'?: Literal['iso8601'] | Literal['float'], 'serialize_by_alias'?: bool, 'str_max_length'?: int | None, 'str_min_length'?: int, 'str_strip_whitespace'?: bool, 'str_to_lower'?: bool, 'str_to_upper'?: bool, 'strict'?: bool, 'title'?: str | None, 'url_preserve_empty_path'?: bool, 'use_attribute_docstrings'?: bool, 'use_enum_values'?: bool, 'val_json_bytes'?: Literal['utf8'] | Literal['base64'] | Literal['hex'], 'val_temporal_unit'?: Literal['seconds'] | Literal['milliseconds'] | Literal['infer'], 'validate_assignment'?: bool, 'validate_by_alias'?: bool, 'validate_by_name'?: bool, 'validate_default'?: bool, 'validate_return'?: bool, 'validation_error_cause'?: bool})"
+Found 2 errors in 1 file (checked 1 source file)
+exit=1
+
+================================================================================
+probes/frozen_kw2.py
+================================================================================
+
+$ cat probes/frozen_kw2.py
+"""frozen=True as a class keyword on the base and on each subclass: what mypy sees."""
+from pydantic import BaseModel
+
+
+class Base(BaseModel, frozen=True, extra="forbid", strict=True):
+    def __init__(self, /, **data: object) -> None:
+        super().__init__(**data)
+
+
+class Sub(Base, frozen=True):
+    value: float
+
+
+class Sub2(Sub, frozen=True):
+    other: float
+
+
+s = Sub(value=1.0)
+s.value = 2.0  # K: refused statically?
+t = Sub2(value=1.0, other=2.0)
+t.other = 3.0  # L: refused statically?
+Sub(value="x")  # M: still typed __init__?
+
+$ uv run --locked mypy probes/frozen_kw2.py
+probes/frozen_kw2.py:19: error: Property "value" defined in "Sub" is read-only  [misc]
+probes/frozen_kw2.py:21: error: Property "other" defined in "Sub2" is read-only  [misc]
+probes/frozen_kw2.py:22: error: Argument "value" to "Sub" has incompatible type "str"; expected "float"  [arg-type]
+Found 3 errors in 1 file (checked 1 source file)
+exit=1
+
+================================================================================
+probes/config_form.py
+================================================================================
+
+$ cat probes/config_form.py
+"""The chosen form: frozen=True as a class keyword on every model, the rest in model_config."""
+import enum
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict
+
+
+class Unit(enum.StrEnum):
+    ratio = "ratio"
+
+
+class Base(BaseModel, frozen=True):
+    model_config = ConfigDict(extra="forbid", strict=True, allow_inf_nan=False)
+
+
+class Quantity(Base, frozen=True):
+    value: float
+    unit: Unit
+
+
+class Holder(Base, frozen=True):
+    model_config = ConfigDict(ser_json_bytes="base64", val_json_bytes="base64")
+    default: Quantity
+    raw: bytes = b""
+
+
+def case(label: str, fn: Any) -> None:
+    try:
+        print(f"  {label}: ok -> {fn()!r}")
+    except Exception as e:  # noqa: BLE001
+        print(f"  {label}: {type(e).__name__}: {str(e).splitlines()[1:3]}")
+
+
+if __name__ == "__main__":
+    print("merged config of Holder:", {k: Holder.model_config.get(k) for k in
+          ("frozen", "extra", "strict", "allow_inf_nan", "ser_json_bytes", "val_json_bytes")})
+    case("Holder(default={'value': 0.5, 'unit': 'ratio'}) (str for Unit inside a nested dict)",
+         lambda: Holder(default={"value": 0.5, "unit": "ratio"}))  # type: ignore[arg-type]
+    case("Holder(default={'value': 0.5, 'unit': Unit.ratio})",
+         lambda: Holder(default={"value": 0.5, "unit": Unit.ratio}))  # type: ignore[arg-type]
+    case("Holder(default=Quantity(value=0.5, unit=Unit.ratio), extra=1)",
+         lambda: Holder(default=Quantity(value=0.5, unit=Unit.ratio), extra=1))  # type: ignore[call-arg]
+    case("Quantity(value=float('inf'), unit=Unit.ratio)", lambda: Quantity(value=float("inf"), unit=Unit.ratio))
+    case("Holder JSON round trip of non-UTF-8 bytes", lambda: Holder.model_validate_json(
+        Holder(default=Quantity(value=1, unit=Unit.ratio), raw=b"\xff").model_dump_json()).raw)
+    q = Quantity(value=0.5, unit=Unit.ratio)
+    case("q.value = 1.0 at runtime", lambda: setattr(q, "value", 1.0))
+    q.value = 1.0  # N: mypy refuses (read-only property)
+
+$ uv run --locked python probes/config_form.py
+merged config of Holder: {'frozen': True, 'extra': 'forbid', 'strict': True, 'allow_inf_nan': False, 'ser_json_bytes': 'base64', 'val_json_bytes': 'base64'}
+  Holder(default={'value': 0.5, 'unit': 'ratio'}) (str for Unit inside a nested dict): ValidationError: ['default.unit', "  Input should be an instance of Unit [type=is_instance_of, input_value='ratio', input_type=str]"]
+  Holder(default={'value': 0.5, 'unit': Unit.ratio}): ok -> Holder(default=Quantity(value=0.5, unit=<Unit.ratio: 'ratio'>), raw=b'')
+  Holder(default=Quantity(value=0.5, unit=Unit.ratio), extra=1): ValidationError: ['extra', '  Extra inputs are not permitted [type=extra_forbidden, input_value=1, input_type=int]']
+  Quantity(value=float('inf'), unit=Unit.ratio): ValidationError: ['value', '  Input should be a finite number [type=finite_number, input_value=inf, input_type=float]']
+  Holder JSON round trip of non-UTF-8 bytes: ok -> b'\xff'
+  q.value = 1.0 at runtime: ValidationError: ['value', '  Instance is frozen [type=frozen_instance, input_value=1.0, input_type=float]']
+Traceback (most recent call last):
+  File "probes/config_form.py", line 48, in <module>
+    q.value = 1.0  # N: mypy refuses (read-only property)
+    ^^^^^^^
+  File "<repo>/.venv/lib/python3.12/site-packages/pydantic/main.py", line 1116, in __setattr__
+    elif (setattr_handler := self._setattr_handler(name, value)) is not None:
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<repo>/.venv/lib/python3.12/site-packages/pydantic/main.py", line 1152, in _setattr_handler
+    _check_frozen(cls, name, value)
+  File "<repo>/.venv/lib/python3.12/site-packages/pydantic/main.py", line 104, in _check_frozen
+    raise ValidationError.from_exception_data(
+pydantic_core._pydantic_core.ValidationError: 1 validation error for Quantity
+value
+  Instance is frozen [type=frozen_instance, input_value=1.0, input_type=float]
+    For further information visit https://errors.pydantic.dev/2.14/v/frozen_instance
+exit=1
+
+$ uv run --locked mypy probes/config_form.py
+probes/config_form.py:48: error: Property "value" defined in "Quantity" is read-only  [misc]
+Found 1 error in 1 file (checked 1 source file)
+exit=1
+
+================================================================================
+probes/models_init.py (added while writing models.py, the same day)
+================================================================================
+
+The first draft of PatchbayModel overrode __init__ to wrap pydantic's ValidationError, and a
+Patch's JSON round trip failed: "unit: Input should be an instance of Unit", with no path. pydantic
+marks a model whose __init__ is not BaseModel's as custom_init (its _model_construction.py, line
+146: `cls.__pydantic_custom_init__ = not getattr(cls.__init__, '__pydantic_base_init__', False)`)
+and then builds a nested model by calling that __init__ with the parsed input, in Python mode, so
+strict refuses JSON's enum string and a nested refusal loses its location. BaseModel's own
+__init__ carries `__pydantic_base_init__ = True` (main.py, line 290). PatchbayModel's __init__
+validates exactly what BaseModel's does and then wraps the refusal, so it carries the same
+marker: nested models are validated by pydantic, a constructor call still runs the override.
+The probe shows both forms, the calls made to __init__ and the error locations.
+
+$ cat probes/models_init.py
+"""A model's own __init__ and nested validation: without and with pydantic's base-init marker."""
+import enum
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, ValidationError
+
+
+class Unit(enum.StrEnum):
+    ratio = "ratio"
+
+
+calls: list[str] = []
+
+
+class Plain(BaseModel, frozen=True):
+    model_config = ConfigDict(strict=True)
+
+    def __init__(self, /, **data: object) -> None:
+        calls.append(type(self).__name__)
+        super().__init__(**data)
+
+
+class Marked(BaseModel, frozen=True):
+    model_config = ConfigDict(strict=True)
+
+    def __init__(self, /, **data: object) -> None:
+        calls.append(type(self).__name__)
+        super().__init__(**data)
+
+    __init__.__pydantic_base_init__ = True  # type: ignore[attr-defined]
+
+
+class PlainQ(Plain, frozen=True):
+    unit: Unit
+
+
+class MarkedQ(Marked, frozen=True):
+    unit: Unit
+
+
+class PlainOuter(Plain, frozen=True):
+    q: PlainQ
+
+
+class MarkedOuter(Marked, frozen=True):
+    q: MarkedQ
+
+
+def case(label: str, fn: Any) -> None:
+    calls.clear()
+    try:
+        out = repr(fn())
+    except ValidationError as e:
+        out = f"ValidationError at {[err['loc'] for err in e.errors()]}: {e.errors()[0]['msg']}"
+    print(f"  {label}: {out}; __init__ called for {calls}")
+
+
+print("custom_init flags:", PlainQ.__pydantic_custom_init__, MarkedQ.__pydantic_custom_init__)
+case("PlainOuter JSON {'q': {'unit': 'ratio'}}", lambda: PlainOuter.model_validate_json('{"q": {"unit": "ratio"}}'))
+case("MarkedOuter JSON {'q': {'unit': 'ratio'}}", lambda: MarkedOuter.model_validate_json('{"q": {"unit": "ratio"}}'))
+case("MarkedOuter(q=MarkedQ(unit=Unit.ratio))", lambda: MarkedOuter(q=MarkedQ(unit=Unit.ratio)))
+case("MarkedOuter(q={'unit': 'nope'}) (the nested path kept?)", lambda: MarkedOuter(q={"unit": "nope"}))  # type: ignore[arg-type]
+
+$ uv run --locked python probes/models_init.py
+custom_init flags: True False
+  PlainOuter JSON {'q': {'unit': 'ratio'}}: ValidationError at [('q', 'unit')]: Input should be an instance of Unit; __init__ called for ['PlainOuter', 'PlainQ']
+  MarkedOuter JSON {'q': {'unit': 'ratio'}}: MarkedOuter(q=MarkedQ(unit=<Unit.ratio: 'ratio'>)); __init__ called for []
+  MarkedOuter(q=MarkedQ(unit=Unit.ratio)): MarkedOuter(q=MarkedQ(unit=<Unit.ratio: 'ratio'>)); __init__ called for ['MarkedQ', 'MarkedOuter']
+  MarkedOuter(q={'unit': 'nope'}) (the nested path kept?): ValidationError at [('q', 'unit')]: Input should be an instance of Unit; __init__ called for ['MarkedOuter']
+exit=0

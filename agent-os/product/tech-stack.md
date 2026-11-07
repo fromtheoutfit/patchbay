@@ -18,7 +18,9 @@ synced in, which every spec here includes (Step 5a of `/agent-os:shape-spec`).
   its reason.
 - **mypy --strict** over the package and the tests.
 - **pytest** for tests and **hypothesis** for property-based ones.
-- **pydantic v2** for every contract that crosses a boundary.
+- **pydantic v2** for every contract that crosses a boundary: frozen, strict models on one base,
+  `PatchbayModel` (the contracts spec, issue #10).
+- **numpy** for rendered audio, a typed `(channels, samples)` float32 array (issue #10).
 - **typer** for the CLI.
 - **src layout**: `src/patchbay/`, typed (`py.typed`); distribution `patchbay-core`, import
   `patchbay`.

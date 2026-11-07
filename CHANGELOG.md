@@ -13,6 +13,47 @@ sync's own commit changes nothing but the synced files
 
 ### Added
 
+- Seventh spec, `agent-os/specs/2026-11-07-0806-contracts-models-events-errors-fake/` (issue #10):
+  the first code in core, the contracts every adapter implements. Every departure from the
+  issue's text is a Decision in the spec's `shape.md`, each the owner's; what pydantic, numpy and
+  mypy do that the design rests on is its `verification/probes.txt`. The version stays 0.0.1.
+  - `src/patchbay/errors.py`: `PatchbayError` and, under it, `ParameterNotFoundError`,
+    `UnitMismatchError`, `ValueOutOfRangeError` (new, against the issue's list),
+    `PatchRejectedError`, `RenderFailedError`, `SubscriberFailedError` and
+    `PatchbayValidationError`; the issue's names take the `Error` suffix ruff's N818 asks. Each
+    carries its fields as attributes and `args`, and builds its message from them.
+  - `src/patchbay/models.py`: `ParameterId` and `PresetKey`, `Unit`, and the models on
+    `PatchbayModel`: frozen (written on each class line, where mypy reads it), closed, finite and
+    strict, and raising `PatchbayValidationError` from the constructor, the three
+    `model_validate*` methods, assignment and deletion. `Quantity`, `Parameter` (with `check`,
+    the rule a value meets), `Patch` (read-only mappings, sorted, opaque bytes as base64 in
+    JSON), `Note`, `Pattern`, `RenderRequest` and `RenderResult` (a read-only float32
+    `(channels, samples)` copy, `elapsed_seconds` in place of the issue's `duration_seconds`,
+    `audio_seconds` computed).
+  - `src/patchbay/events.py`: `Event` (stamped in UTC when built), `ParameterChanged`,
+    `PatchLoaded`, `RenderCompleted` (carrying `elapsed_seconds` and `audio_seconds`), the
+    generic `Subscriber` protocol and the synchronous `EventBus`, which runs every subscriber
+    before raising `SubscriberFailedError`.
+  - `src/patchbay/contracts.py`: the runtime-checkable `Instrument` protocol, positional-only, and
+    `Subscriber` re-exported from `events.py`, where it moved from the issue's place.
+  - `src/patchbay/testing/`: `FakeInstrument`, the reference implementation (eight parameters,
+    a sine voice, a clip warning); `RecordingSubscriber`; `contract_tests.py`, eleven contract
+    tests listed in `CONTRACT_TESTS`, failing with `ContractViolationError` and importing no
+    pytest.
+  - `src/patchbay/__init__.py` re-exports the contracts, models, events and errors beside
+    `__version__`.
+  - `tests/unit/`: a test module per source module, hypothesis properties of the `Quantity`,
+    `Note` and `Pattern` validators and of a `Patch`'s JSON round trip with arbitrary opaque
+    bytes; `tests/unit/testing/conftest.py`, the fixtures an adapter copies; every contract test
+    run against FakeInstrument and, each, against a fake broken its way.
+    `tests/unit/test_package.py` leaves submodules out of the names held to `__all__` and holds
+    every exported name to the object its module defines.
+  - `pyproject.toml`: `numpy>=2.5.4,<3` and `pydantic>=2.14.3,<3` in `[project] dependencies`;
+    `uv.lock` gains them and their dependencies and changes nothing else
+    (`verification/uv-lock-diff.txt`).
+  - `README.md` (the layout, what `uv sync` installs) and `agent-os/product/tech-stack.md`
+    (pydantic in use, numpy's line).
+
 - Third spec, `agent-os/specs/2026-11-05-2018-toolchain-ruff-mypy-pytest-full-gate/` (issue #2):
   the Python toolchain, configured in `pyproject.toml` and nowhere else, and the gate given real
   steps. Every configuration choice is a Decision in the spec's `shape.md`; this is the code the
