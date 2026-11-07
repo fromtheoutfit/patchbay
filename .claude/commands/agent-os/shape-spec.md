@@ -201,18 +201,20 @@ Run the full verification gate, in order. The spec is not complete until every s
 1. `bash -n` on every shell script under `scripts/` as git lists them (tracked or untracked,
    not ignored), at a work-tree top that is the repository root — every one must parse; any
    other file there fails the step by name
-2. `uv sync --locked`, then `uv run --locked ruff format --check .` — the locked toolchain
-   syncs, and every file is formatted as ruff format writes it
-3. `uv run --locked ruff check .` — no violation of `[tool.ruff.lint]` in `pyproject.toml`
-4. `uv run --locked mypy` — no type error under `[tool.mypy]` (strict, over `src/` and `tests/`,
-   skipping what `.gitignore` ignores)
+2. `uv sync --locked`, then `uv run --locked ruff format --check` over the `.py` and `.pyi`
+   files git lists — the locked toolchain syncs, and every file is formatted as ruff format
+   writes it
+3. `uv run --locked ruff check` over the same files — no violation of `[tool.ruff.lint]` in
+   `pyproject.toml`
+4. `uv run --locked mypy` over the `.py` and `.pyi` files git lists under `src/` and `tests/` —
+   no type error under `[tool.mypy]` (strict)
 5. `uv run --locked pytest` — every test under `tests/` passes (`[tool.pytest.ini_options]`),
-   each path git ignores there passed to pytest as `--ignore`
+   once no `.py` file under `tests/`, and no `conftest.py` at the root, is one git ignores
    — steps 2–5 run the tools pinned in `pyproject.toml`'s `[dependency-groups] dev` as `uv.lock`
    resolves them, under the uv `[tool.uv] required-version` pins; step 2's sync fails, before
    any tool runs, when the lockfile no longer matches `pyproject.toml` or the running uv is not
-   the required one; each reads only the files git lists, ruff and mypy reading `.gitignore`
-   themselves and pytest given what git ignores
+   the required one; ruff and mypy are given git's list itself, and pytest walks `tests/` only
+   once nothing there that it would read is ignored
 6. `scripts/sync-standards.sh --check` — `agent-os/standards/base/`, the `base:` section of
    `agent-os/standards/index.yml` and the script itself are byte-identical to `patchbay-standards`
    at the commit in `agent-os/standards/base/.version`, read from the sibling checkout

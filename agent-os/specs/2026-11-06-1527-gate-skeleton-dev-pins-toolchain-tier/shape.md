@@ -167,6 +167,10 @@ file changed, so every negative test was rerun after the last edit to them:
   Every hunk is a step list, a pin or a path spelled from its root; the skeleton is byte-identical
   but for the N/M numbers. Nothing differs beyond step lists, pins and paths.
 
+Revised after the review of PR 9 in `agent-os/specs/2026-11-07-0711-gate-revision-after-pr-9-review/`,
+which replaces the listing Decisions above for steps 2–5 (`exclude_gitignore` and pytest's
+`--ignore` are gone) and fixes the skeleton; the transcripts here are the first round's.
+
 **Docs (step 7):**
 
 - **Headers of the changed files:** `scripts/gate.sh` (the exit contract, the listing paragraph

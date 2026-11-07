@@ -88,6 +88,30 @@ sync's own commit changes nothing but the synced files
 
 ### Changed
 
+- Sixth spec, `agent-os/specs/2026-11-07-0711-gate-revision-after-pr-9-review/`, the gate's spec
+  for the revision after the owner's review of PR 9 (nine findings, each with its disposition in
+  the spec's `plan.md`).
+  - `scripts/gate.sh` steps 2-4 give ruff and mypy git's list of `.py` and `.pyi` files as
+    explicit paths, each checked on the disk, so a tracked file `.gitignore` matches is read and
+    git alone decides what `.git/info/exclude` hides, in a linked worktree too; `[tool.mypy]`
+    loses `exclude_gitignore`. Step 5 lets pytest walk `tests/` only once no `.py` file there, and
+    no `conftest.py` at the root, is one git ignores, since pytest loads an ignored conftest
+    whatever `--ignore` says; the `--ignore` arguments are gone.
+  - The skeleton is fixed ahead of `patchbay-standards`: step 1's root guard asks git whether this
+    is the top (`git rev-parse --show-cdup`) instead of comparing paths, which a path typed in
+    another case broke; `listed` lists a path in merge conflict once (`sort -zu`) and ends in an
+    empty record only when git listed, so a listing git cannot make fails its step by name.
+    `verification/gate-sh-diff.txt` names these hunks as the deviation until the sync; they go
+    upstream with `sync-standards.sh`'s own root check.
+  - `scripts/gate-negative-tests.sh`: `holds` and `times` assert a passing run's lines and a
+    line's exact count, and the header no longer says `run` takes text on a passing run. g gains
+    the copy entered in upper case, a script in a three-way merge conflict and a corrupt index,
+    the gate at `6adf50e` shown on each; p and q are rewritten for the new steps 2-5, p with a
+    linked worktree; r refuses the listing of steps 2, 4 and 5 in turn through a git on `PATH`
+    that refuses one call. 68 runs, 0 unexpected; `verification/reason-assertion-mutations.txt`
+    shows each new guard caught.
+  - `README.md`, `CLAUDE.md` and the gate task in `shape-spec.md` describe the new steps 2-5.
+
 - Fifth spec, `agent-os/specs/2026-11-06-1527-gate-skeleton-dev-pins-toolchain-tier/` (issues #5,
   #6 and #7), the gate's spec after the sync to `11ceffd`: what the base standards now pinned ask
   of this repository's own gate files, one spec since all three change them.
@@ -96,18 +120,17 @@ sync's own commit changes nothing but the synced files
     and a line on stderr; `listed`, one `git ls-files -z` call, and `present`, which names a
     symlink to nothing as one; step 1's root guard, so a copy nested in another repository's work
     tree is refused rather than listed against the outer one. Steps 2-5 read only the files git
-    lists: ruff reads `.gitignore`; `[tool.mypy]` gains `exclude_gitignore = true`, its limits in
-    the comment beside it; step 5 gives pytest `--ignore` for each path git ignores under
-    `tests/`. `verification/gate-sh-diff.txt` shows the diff against the sibling's `gate.sh`
-    holding only step lists, pins and paths; `verification/probes.txt` holds the probes of ruff,
-    mypy, pytest and uv the changes rest on.
+    lists, in the form the revision after the review of PR 9 (the sixth spec, above) settled.
+    `verification/gate-sh-diff.txt` shows the diff against the sibling's `gate.sh` holding only
+    step lists, pins and paths; `verification/probes.txt` holds the probes of ruff, mypy, pytest
+    and uv the changes rest on.
   - `scripts/gate-negative-tests.sh` takes the harness shape: every failing run names the lines its
     output must hold, the gate's `FAIL` line last, and is held to no later step banner; `only`
     holds step 6's drift report to exactly the lines b, c, e and f name; every setup step ends in
     `|| die`; the fixture's wording is corrected (a local clone holds the pin whichever ref reaches
     it); a kept transcript holds one run. New cases: g's tracked symlink to nothing and the copy
     nested in another repository, with the gate at `92cd215` shown on both; u's failed `cd`; p
-    (steps 2-4 read what git lists, the force-added gap asserted as it stands) and q (step 5).
+    and q (steps 2-5 read what git lists, rewritten by the sixth spec).
     `verification/reason-assertion-mutations.txt`: three mutations, each caught only by the
     reason or by `only`.
   - `pyproject.toml`: the header and the dev group's comment name the pins of the tools the gate

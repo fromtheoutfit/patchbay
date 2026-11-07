@@ -54,8 +54,9 @@ prohibition is on attribution markers, not on citing the work.
   check .`; `uv run --locked mypy`; `uv run --locked pytest`, the four reading their rules from
   the `[tool.*]` sections of `pyproject.toml` and their pins from its `[dependency-groups] dev` as
   `uv.lock` resolves them, under the uv its `[tool.uv] required-version` pins, and reading only
-  the files git lists (ruff and mypy read `.gitignore`; pytest is given each path git ignores
-  under `tests/` as `--ignore`); and `scripts/sync-standards.sh --check`, holding
+  the files git lists (ruff and mypy are given git's list of `.py` and `.pyi` files; pytest walks
+  `tests/` once no `.py` file there, and no root `conftest.py`, is one git ignores); and
+  `scripts/sync-standards.sh --check`, holding
   `agent-os/standards/base/`, the `base:` section of `agent-os/standards/index.yml` and the sync
   script byte-identical to `patchbay-standards` at the pinned commit, read from the sibling
   checkout `../patchbay-standards`. It exits 1 at the first failing step, named, or 2 on usage or

@@ -102,6 +102,8 @@ ignore = [
 # mypy: gate step 4, over the package and the tests.
 [tool.mypy]
 strict = true
+# What a bare `uv run --locked mypy` walks. The gate gives mypy git's list of the .py and .pyi
+# files under these instead (scripts/gate.sh step 4), so it reads exactly the files git lists.
 files = ["src", "tests"]
 # The interpreter the types are checked against, the floor of requires-python.
 python_version = "3.12"
@@ -110,13 +112,6 @@ warn_unreachable = true
 # Strict already implies it; stated because the issue names it: a name is exported only by
 # __all__ or an explicit `from x import y as y`, so the package's surface is what it says.
 implicit_reexport = false
-# The gate reads only the files git lists (agent-os/standards/base/process/verification-gate.md,
-# "One script"), and mypy walks `files` without reading .gitignore unless told to: with this it
-# skips what the .gitignore files from here down and .git/info/exclude ignore. A documented limit:
-# it does not read git's global excludes file (core.excludesFile), so a file ignored only there is
-# checked here though git does not list it; and, like ruff, it skips a tracked file .gitignore
-# matches. Probed with mypy 2.4.1 in the gate spec of issues #5-#7.
-exclude_gitignore = true
 # An untyped third-party package gets its own [[tool.mypy.overrides]] block here, with
 # `module = ["name.*"]`, `ignore_missing_imports = true` and a comment saying which package and
 # why; never a global ignore. None is needed yet.
