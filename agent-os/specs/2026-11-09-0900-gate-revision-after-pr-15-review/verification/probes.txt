@@ -1,0 +1,200 @@
+Probes of the review of PR 15, run 2026-11-09 on branch task/12-gate-spec-3-take-patchbay-standards-17-19-20-and-21-after-the-sync-that-brings-them-in, on a scratch
+export of 912987a, git-initialised and committed, with patchbay-standards beside it, at the pins in
+uv.lock. Each section shows its setup before reading its result, and every run's status is printed.
+The output lines of a tool are its last two; a gate run's are its FAIL, summary and closing lines.
+
+Results:
+- Findings 1, 2, 3 in both directions, 5 and 7 reproduce at 912987a.
+- ruff --config pyproject.toml holds against ruff.toml, .ruff.toml and a nested tests/ruff.toml, for
+  check and for format. mypy --config-file pyproject.toml holds against mypy.ini and .mypy.ini.
+  pytest -c pyproject.toml holds against all four of pytest's names, with the same rootdir and
+  testpaths as a bare run. setup.cfg is a control, after pyproject.toml for mypy.
+- uv.toml beside pyproject.toml overrides [tool.uv] required-version.
+- -p no:doctest in addopts: pytest reads no .txt. A --doctest-glob does NOT fail loudly, as this
+  spec's plan first said: from addopts the plugin is unregistered after its options are added, so
+  the option is accepted and inert, the matching doctest still unread (the last case). On the
+  command line it is unknown. Inert still closes finding 4's hazard: no glob reopens the hole.
+
+$ pins
+uv 0.13.7 (Homebrew 2026-11-03 aarch64-apple-darwin)
+ruff 0.17.4
+mypy 2.4.1 (compiled: yes)
+pytest 9.2.0
+
+#### Finding 1: ignored configs replace the rules, gate at 912987a
+### control: a tracked module with an unused import and an untyped function
+FAIL  step 3/6: ruff check found a violation, or could not read its rule set (see above)
+gate exit=1
+### ruff.toml (select E9) and mypy.ini (ignore_errors), hidden by .git/info/exclude
+!! mypy.ini
+!! ruff.toml
+271 passed in 4.04s
+Gate steps 1-6 passed. Steps 7-9 are judgment, recorded in shape.md: Docs, Version, the standards retrospective.
+gate exit=0
+### a nested ignored tests/ruff.toml switches ruff for that subtree
+Found 1 error.
+[*] 1 fixable with `--fix`.
+exit=1   <- uv run --locked ruff check -- tests/unit/test_nested_probe.py
+All checks passed!
+exit=0   <- uv run --locked ruff check -- tests/unit/test_nested_probe.py
+### an ignored uv.toml overrides [tool.uv] required-version
+52:required-version = "==0.13.6"
+error: Required uv version `==0.13.6` does not match the running version `0.13.7`
+exit=2   <- uv sync --locked
+!! uv.toml
+Installed 1 package in 1ms
+ ~ patchbay-core==0.0.1 (from file:///private/tmp/claude-501/-Users-michaelwitwicki-Code-Audio-patchbay/f4aafe25-cd47-4070-b830-fe8a65f507bb/scratchpa
+exit=0   <- uv sync --locked
+
+#### Finding 2: an untracked or tracked pytest.ini deselects a failing test, gate at 912987a
+### control: a tracked failing test
+FAILED tests/unit/test_probe_fail.py::test_probe_fail - AssertionError
+1 failed, 271 passed in 1.34s
+FAIL  step 5/6: a test failed, or pytest could not read its configuration (see above)
+gate exit=1
+### pytest.ini, untracked and not ignored
+?? pytest.ini
+collected 272 items / 1 deselected / 271 selected
+====================== 271 passed, 1 deselected in 0.77s =======================
+Gate steps 1-6 passed. Steps 7-9 are judgment, recorded in shape.md: Docs, Version, the standards retrospective.
+gate exit=0
+### pytest.ini, staged
+A  pytest.ini
+collected 272 items / 1 deselected / 271 selected
+====================== 271 passed, 1 deselected in 0.73s =======================
+Gate steps 1-6 passed. Steps 7-9 are judgment, recorded in shape.md: Docs, Version, the standards retrospective.
+gate exit=0
+
+#### Finding 3: step 1 reads the work tree's .gitignore files, gate at 912987a
+### committed notes.log matched by *.log: fails step 1
+.gitignore:60:*.log	notes.log
+FAIL  step 1/6: tracked, but a .gitignore ignores them; stop ignoring each (a ! pattern, and for a file under an ignored directory, ignore dir/* rather than dir/ first) o
+gate exit=1
+ M .gitignore
+### the same with *.log removed from .gitignore, uncommitted: passes locally
+271 passed in 1.36s
+Gate steps 1-6 passed. Steps 7-9 are judgment, recorded in shape.md: Docs, Version, the standards retrospective.
+gate exit=0
+### a clean clone of that commit: refused by the same gate (step 1 alone needs no sibling)
+FAIL  step 1/6: tracked, but a .gitignore ignores them; stop ignoring each (a ! pattern, and for a file under an ignored
+        notes.log
+### the other direction: an untracked agent-os/product/.gitignore holding *.md
+?? agent-os/product/.gitignore
+FAIL  step 1/6: tracked, but a .gitignore ignores them; stop ignoring each (a ! pattern, and for a file under an ignored directory, ignore dir/* rather than dir/ first) o
+gate exit=1
+
+#### Finding 7: a force-added file no step reads fails step 1, gate at 912987a
+FAIL  step 1/6: tracked, but a .gitignore ignores them; stop ignoring each (a ! pattern, and for a file under an ignored directory, ignore dir/* rather than dir/ first) o
+gate exit=1
+
+#### Finding 5: a misbehaving tzinfo escapes as a built-in, src at 912987a
+Bare NotImplementedError not a PatchbayError
+RaisesAtInstant RuntimeError not a PatchbayError
+ReturnsInt TypeError not a PatchbayError
+exit=0
+
+#### The flags: each config changes the rules without the flag and not with it
+### ruff.toml (select E9, line-length 40)
+All checks passed!
+exit=0   <- uv run --locked ruff check -- src/patchbay/_probe.py
+Found 3 errors.
+[*] 1 fixable with `--fix`.
+exit=1   <- uv run --locked ruff check --config pyproject.toml -- src/patchbay/_probe.py
+
+1 file would be reformatted
+exit=1   <- uv run --locked ruff format --check -- src/patchbay/events.py
+1 file already formatted
+exit=0   <- uv run --locked ruff format --config pyproject.toml --check -- src/patchbay/events.py
+### .ruff.toml (select E9, line-length 40)
+All checks passed!
+exit=0   <- uv run --locked ruff check -- src/patchbay/_probe.py
+Found 3 errors.
+[*] 1 fixable with `--fix`.
+exit=1   <- uv run --locked ruff check --config pyproject.toml -- src/patchbay/_probe.py
+
+1 file would be reformatted
+exit=1   <- uv run --locked ruff format --check -- src/patchbay/events.py
+1 file already formatted
+exit=0   <- uv run --locked ruff format --config pyproject.toml --check -- src/patchbay/events.py
+### nested tests/ruff.toml (select E9)
+All checks passed!
+exit=0   <- uv run --locked ruff check -- tests/unit/test_nested_probe.py
+Found 1 error.
+[*] 1 fixable with `--fix`.
+exit=1   <- uv run --locked ruff check --config pyproject.toml -- tests/unit/test_nested_probe.py
+### mypy.ini (ignore_errors)
+Success: no issues found in 1 source file
+exit=0   <- uv run --locked mypy -- src/patchbay/_probe.py
+src/patchbay/_probe.py:6: error: Function is missing a type annotation  [no-untyped-def]
+Found 1 error in 1 file (checked 1 source file)
+exit=1   <- uv run --locked mypy --config-file pyproject.toml -- src/patchbay/_probe.py
+### .mypy.ini (ignore_errors)
+Success: no issues found in 1 source file
+exit=0   <- uv run --locked mypy -- src/patchbay/_probe.py
+src/patchbay/_probe.py:6: error: Function is missing a type annotation  [no-untyped-def]
+Found 1 error in 1 file (checked 1 source file)
+exit=1   <- uv run --locked mypy --config-file pyproject.toml -- src/patchbay/_probe.py
+### control: setup.cfg (comes after pyproject.toml for mypy)
+src/patchbay/_probe.py:6: error: Function is missing a type annotation  [no-untyped-def]
+Found 1 error in 1 file (checked 1 source file)
+exit=1   <- uv run --locked mypy -- src/patchbay/_probe.py
+src/patchbay/_probe.py:6: error: Function is missing a type annotation  [no-untyped-def]
+Found 1 error in 1 file (checked 1 source file)
+exit=1   <- uv run --locked mypy --config-file pyproject.toml -- src/patchbay/_probe.py
+### pytest.toml (addopts deselecting the failing test)
+
+====================== 271 passed, 1 deselected in 1.34s =======================
+exit=0   <- uv run --locked pytest
+FAILED tests/unit/test_probe_fail.py::test_probe_fail - AssertionError
+1 failed, 271 passed in 0.74s
+exit=1   <- uv run --locked pytest -c pyproject.toml
+### .pytest.toml (addopts deselecting the failing test)
+
+====================== 271 passed, 1 deselected in 0.79s =======================
+exit=0   <- uv run --locked pytest
+FAILED tests/unit/test_probe_fail.py::test_probe_fail - AssertionError
+1 failed, 271 passed in 0.73s
+exit=1   <- uv run --locked pytest -c pyproject.toml
+### pytest.ini (addopts deselecting the failing test)
+
+====================== 271 passed, 1 deselected in 0.78s =======================
+exit=0   <- uv run --locked pytest
+FAILED tests/unit/test_probe_fail.py::test_probe_fail - AssertionError
+1 failed, 271 passed in 0.76s
+exit=1   <- uv run --locked pytest -c pyproject.toml
+### .pytest.ini (addopts deselecting the failing test)
+
+====================== 271 passed, 1 deselected in 0.73s =======================
+exit=0   <- uv run --locked pytest
+FAILED tests/unit/test_probe_fail.py::test_probe_fail - AssertionError
+1 failed, 271 passed in 0.70s
+exit=1   <- uv run --locked pytest -c pyproject.toml
+### pytest -c pyproject.toml, nothing else: the same root and tests as a bare run
+rootdir: <export>
+configfile: pyproject.toml
+testpaths: tests
+rootdir: <export>
+configfile: pyproject.toml
+testpaths: tests
+
+### -p no:doctest in addopts: an ignored test_local.txt holding a failing doctest
+FAILED tests/unit/test_local.txt::test_local.txt
+1 failed, 271 passed in 1.30s
+exit=1   <- uv run --locked pytest -c pyproject.toml
+135:addopts = "-q --strict-markers --strict-config -p no:doctest"
+.......................................................                  [100%]
+271 passed in 0.73s
+exit=0   <- uv run --locked pytest -c pyproject.toml
+### and a --doctest-glob then fails loudly
+.......................................................                  [100%]
+271 passed in 0.75s
+exit=0   <- uv run --locked pytest -c pyproject.toml --doctest-glob=x*.txt
+
+### -p no:doctest in addopts, with a --doctest-glob that matches the failing doctest (the case that tells loud from inert)
+135:addopts = "-q --strict-markers --strict-config -p no:doctest"
+271 passed in 0.74s
+exit=0   <- uv run --locked pytest -c pyproject.toml --doctest-glob='test*.txt'
+### the same with -p no:doctest on the command line instead of in addopts
+135:addopts = "-q --strict-markers --strict-config"
+pytest: error: unrecognized arguments: --doctest-glob=test*.txt
+exit=4   <- uv run --locked pytest -c pyproject.toml -p no:doctest --doctest-glob='test*.txt'

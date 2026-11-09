@@ -84,8 +84,8 @@ Six runnable steps, in order, stopping at the first failure (exit 1; exit 2 on u
 script cannot enter the repository root):
 
 1. `bash -n` on every shell script under `scripts/` as git lists them, tracked or untracked and
-   not ignored, at a work-tree top that is the repository root; a tracked file a `.gitignore`
-   ignores, a file there that is neither `.sh` nor bash-shebanged, a listed path missing from the
+   not ignored, at a work-tree top that is the repository root; a tracked file a step reads that a
+   `.gitignore` ignores, a file there that is neither `.sh` nor bash-shebanged, a listed path missing from the
    disk, a symlink to nothing and a listing git cannot make (a corrupt index) each fail the step
    by name.
 2. `uv sync --locked`, then `uv run --locked ruff format --check` over the `.py` and `.pyi` files
@@ -94,9 +94,8 @@ script cannot enter the repository root):
    selects every rule and ignores only what this tree proved wrong, each with its reason.
 4. `uv run --locked mypy` over the `.py` and `.pyi` files git lists under `src/` and `tests/`: no
    type error under `strict`.
-5. `uv run --locked pytest`: every test under `tests/` passes, once no `.py` or `test*.txt` file
-   there, and no `conftest.py` at the root or root file pytest reads ahead of `pyproject.toml`
-   (`pytest.toml`, `.pytest.toml`, `pytest.ini`, `.pytest.ini`), is one git ignores.
+5. `uv run --locked pytest`: every test under `tests/` passes, once no `.py` file there, and no
+   `conftest.py` at the root, is one git ignores.
 6. `scripts/sync-standards.sh --check`: `agent-os/standards/base/`, the `base:` section of
    `agent-os/standards/index.yml` and the sync script itself are byte-identical to
    `patchbay-standards` at the pinned commit.
@@ -105,10 +104,13 @@ Step 2 opens with `uv sync --locked`, which installs exactly what `uv.lock` name
 as the sync, before any tool runs, when a pin was edited in `pyproject.toml` without `uv lock` (the
 lockfile is never rewritten), when uv cannot read either file or build the package from them, or
 when the running uv is not the required one; so the gate writes nothing but the ignored `.venv/` and
-caches. Steps 2 to 5 then run each tool under `--locked`, the one `uv.lock` names, and read only
-the files git lists: ruff and mypy are given git's list itself, so git alone decides what is
+caches. A `uv.toml` at the root fails the step by name before uv runs, since uv would read it ahead of
+`[tool.uv]`. Steps 2 to 5 then run each tool under `--locked`, the one `uv.lock` names, told by flag
+to read `pyproject.toml` alone, so a `ruff.toml`, `mypy.ini` or `pytest.ini` beside it, tracked or
+not, cannot replace the rule set, and read only the files git lists: ruff and mypy are given git's list itself, so git alone decides what is
 ignored; pytest, which loads the `conftest.py` of
-every directory it collects from, walks `tests/` only once nothing it would read is ignored. Step 6 reads the sibling checkout at `../patchbay-standards`, so
+every directory it collects from, walks `tests/` only once nothing it would read is ignored, and
+reads no `.txt` (`-p no:doctest`). Step 6 reads the sibling checkout at `../patchbay-standards`, so
 clone `patchbay-standards` beside this repository first; CI checks it out there at the pinned
 commit, installs uv with `astral-sh/setup-uv` at the version `[tool.uv] required-version` pins,
 runs `uv sync --locked` and then the script. Three

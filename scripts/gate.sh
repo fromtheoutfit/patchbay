@@ -17,38 +17,42 @@
 # A step that reads files from the tree reads the files git lists (the rule in
 # agent-os/standards/base/process/verification-gate.md, "One script"): the tracked files plus the
 # untracked ones git does not ignore, in one git ls-files -z call, each path once (a path in merge
-# conflict is in the index once per stage), so an ignored stray such as .DS_Store is never seen
-# and a file a spec adds before it is staged is. Each listing is written to a file in a temporary
-# directory and git's own status checked, since neither a pipe nor a process substitution keeps
-# it: a listing git could not make (a corrupt index) fails its step by name rather than reading as
-# an empty one. Step 1 first refuses a tree whose work-tree top is not the repository root, a copy
+# conflict is in the index once per stage), so an ignored stray such as .DS_Store is never seen and
+# a file a spec adds before it is staged is. Each listing is written to a file in a temporary
+# directory and git's own status checked, since neither a pipe nor a process substitution keeps it:
+# a listing git could not make (a corrupt index) fails its step by name rather than reading as an
+# empty one. Step 1 first refuses a tree whose work-tree top is not the repository root, a copy
 # without .git inside another repository included, so no step lists files against an outer
-# repository; it asks git whether this is inside a work tree (git rev-parse --is-inside-work-tree
-# is true, which it is not in .git/ or a bare repository, where --show-cdup is empty too) and
-# whether it is the top (--show-cdup is empty), and compares no paths, since a path typed in
-# another case, or spelled C:/ rather than /c/, names the same directory. Step 1 then refuses every
-# tracked file a committed .gitignore matches under the paths the gate's listings read (git
-# ls-files --cached --ignored --exclude-per-directory=.gitignore -- ., step 2 listing the whole
-# tree: a file force-added, or added before its pattern), naming each under one FAIL line: git
-# lists such a file though the repository says it is ignored, and a tool that reads .gitignore
-# itself skips it. Only committed .gitignore files count, so every clone of a commit gets the same
-# answer; .git/info/exclude and the global excludes file are the machine's, and a file no step
-# reads never fails the gate. A listed path missing from the disk, or a symlink to nothing, fails
-# its step by name. Step 1 parses a file ending in .sh or starting with a bash shebang; any other
-# file fails the step by name, since only shell scripts live under scripts/. Steps 2-4 give ruff
-# and mypy git's list itself: the .py and .pyi files it lists (for mypy, those under src/ and
-# tests/), as explicit paths, so git alone decides what .gitignore, .git/info/exclude and the
-# global excludes file hide. pytest has no form that reads a list without also loading the
-# conftest.py of each directory it collects from, so step 5 lets it walk tests/ (testpaths) and
-# first refuses, by name, any .py file git ignores there, an ignored test*.txt there, which its
-# doctest plugin collects, an ignored conftest.py at the root, which pytest loads too, and an
-# ignored pytest.toml, .pytest.toml, pytest.ini or .pytest.ini at the root, each read in place of
-# pyproject.toml (the spec of issue #12, verification/probes.txt): with nothing ignored for pytest
-# to read, its walk reads only what git lists. Step 5's listing keeps --exclude-standard: it
-# guards what pytest reads on this machine, which those files are.
+# repository; it asks git whether this is inside a work tree (git rev-parse --is-inside-work-tree is
+# true, which it is not in .git/ or a bare repository, where --show-cdup is empty too) and whether
+# it is the top (--show-cdup is empty), and compares no paths, since a path typed in another case,
+# or spelled C:/ rather than /c/, names the same directory. Step 1 then refuses every tracked file a
+# .gitignore matches under the paths the gate's listings read (git ls-files --cached --ignored
+# --exclude-per-directory=.gitignore -- scripts '*.py' '*.pyi', the union of the gate's listings: a
+# file force-added, or added before its pattern), naming each under one FAIL line: git lists such a
+# file though the repository says it is ignored, and a tool that reads .gitignore itself skips it.
+# The .gitignore files read are the work tree's, so a clean clone of a commit answers from that
+# commit's own, and CI's clean checkout is the one that counts: an uncommitted edit to a .gitignore
+# can make a local run disagree with it. .git/info/exclude and the global excludes file are the
+# machine's and never count, and a file no step reads never fails the gate. A listed path missing
+# from the disk, or a symlink to nothing, fails its step by name. Step 1 parses a file ending in .sh
+# or starting with a bash shebang; any other file fails the step by name, since only shell scripts
+# live under scripts/. Steps 2-4 give ruff and mypy git's list itself: the .py and .pyi files it
+# lists (for mypy, those under src/ and tests/), as explicit paths, so git alone decides what
+# .gitignore, .git/info/exclude and the global excludes file hide. pytest has no form that reads a
+# list without also loading the conftest.py of each directory it collects from, so step 5 lets it
+# walk tests/ (testpaths) and first refuses, by name, any .py file git ignores there, or an ignored
+# conftest.py at the root, which pytest loads too: with nothing ignored for pytest to read, its walk
+# reads only what git lists, and -p no:doctest in addopts keeps it from reading any .txt. Step 5's
+# listing keeps --exclude-standard: it guards what pytest reads on this machine, which those files
+# are.
 #
 # Steps 2-5 run the Python toolchain: ruff format --check, ruff check, mypy and pytest, each as
-# `uv run --locked <tool>` from the repository root. Pins: the tools are pinned exactly in the
+# `uv run --locked <tool>` from the repository root, and each told to read pyproject.toml alone
+# (ruff --config, mypy --config-file, pytest -c), so a ruff.toml, mypy.ini or pytest.ini beside it
+# or a ruff.toml below it, tracked or not, cannot replace the rule set. uv has no such flag that
+# keeps [tool.uv] (--config-file takes only a uv.toml, --no-config drops required-version), so
+# step 2 refuses a uv.toml at the root by name. Pins: the tools are pinned exactly in the
 # [dependency-groups] dev section of pyproject.toml, each with the date it was published, and
 # resolved in uv.lock; uv itself is pinned by [tool.uv] required-version there. Step 2 opens with
 # `uv sync --locked`, which installs exactly what uv.lock names into .venv (a package the lock does
@@ -100,7 +104,7 @@ inside=$(git rev-parse --is-inside-work-tree 2>/dev/null) && [ "$inside" = true 
 tmp=$(mktemp -d) && [ -n "$tmp" ] && [ -d "$tmp" ] ||
   fail 1/6 "mktemp -d made no temporary directory for git's listings (see above)"
 trap 'rm -rf "$tmp"' EXIT
-git_list "$tmp/ignored" --cached --ignored --exclude-per-directory=.gitignore -- . ||
+git_list "$tmp/ignored" --cached --ignored --exclude-per-directory=.gitignore -- scripts '*.py' '*.pyi' ||
   fail 1/6 "git could not list the tracked files a .gitignore ignores (see above)"
 if [ -s "$tmp/ignored" ]; then
   fail_list 1/6 "tracked, but a .gitignore ignores them; stop ignoring each (a ! pattern, and for a file under an ignored directory, ignore dir/* rather than dir/ first) or stop tracking it (git rm --cached)" "$tmp/ignored"
@@ -119,46 +123,45 @@ done < "$tmp/scripts"
 [ "$n" -gt 0 ] || fail 1/6 "git lists no file under scripts/"
 
 step "2/6  uv sync --locked, then uv run --locked ruff format --check over the .py and .pyi files git lists (the locked toolchain; the formatter)"
-listed "$tmp/tree" . || fail 2/6 "git could not list the files of the tree (see above)"
+listed "$tmp/py" '*.py' '*.pyi' || fail 2/6 "git could not list the .py and .pyi files of the tree (see above)"
 py=()
 while IFS= read -r -d '' f; do
-  case "$f" in *.py|*.pyi) present 2/6 "$f"; py+=("$f") ;; esac
-done < "$tmp/tree"
+  present 2/6 "$f"; py+=("$f")
+done < "$tmp/py"
 [ "${#py[@]}" -gt 0 ] || fail 2/6 "git lists no .py or .pyi file"
 command -v uv >/dev/null 2>&1 || fail 2/6 "uv is not on PATH; steps 2-5 run the pinned tools through uv run --locked"
+[ ! -e uv.toml ] && [ ! -L uv.toml ] ||
+  fail 2/6 "uv.toml is at the root, where uv reads it ahead of [tool.uv] in pyproject.toml; remove it, uv is configured in pyproject.toml alone"
 uv sync --locked ||
   fail 2/6 "uv could not sync the locked toolchain: uv.lock does not match pyproject.toml, uv could not read them or build the package, or this uv is not the version [tool.uv] requires (see above)"
 echo "ok   the locked toolchain synced"
-uv run --locked ruff format --check -- "${py[@]}" ||
+uv run --locked ruff format --config pyproject.toml --check -- "${py[@]}" ||
   fail 2/6 "a file is not formatted as ruff format would write it, or ruff could not read its settings (see above)"
 echo "ok   ${#py[@]} file(s) formatted"
 
 step "3/6  uv run --locked ruff check over the same files (the linter: [tool.ruff.lint] of pyproject.toml)"
-uv run --locked ruff check -- "${py[@]}" || fail 3/6 "ruff check found a violation, or could not read its rule set (see above)"
+uv run --locked ruff check --config pyproject.toml -- "${py[@]}" || fail 3/6 "ruff check found a violation, or could not read its rule set (see above)"
 echo "ok   no violation"
 
 step "4/6  uv run --locked mypy over the .py and .pyi files git lists under src/ and tests/ ([tool.mypy] of pyproject.toml: strict)"
-listed "$tmp/src" src tests || fail 4/6 "git could not list the files under src/ and tests/ (see above)"
 src=()
-while IFS= read -r -d '' f; do
-  case "$f" in *.py|*.pyi) present 4/6 "$f"; src+=("$f") ;; esac
-done < "$tmp/src"
+for f in "${py[@]}"; do
+  case "$f" in src/*|tests/*) src+=("$f") ;; esac
+done
 [ "${#src[@]}" -gt 0 ] || fail 4/6 "git lists no .py or .pyi file under src/ or tests/"
-uv run --locked mypy -- "${src[@]}" || fail 4/6 "mypy found a type error (see above)"
+uv run --locked mypy --config-file pyproject.toml -- "${src[@]}" || fail 4/6 "mypy found a type error (see above)"
 echo "ok   no type error"
 
 step "5/6  uv run --locked pytest ([tool.pytest.ini_options] of pyproject.toml, over tests/, once nothing pytest would read is one git ignores)"
-git_list "$tmp/pytest" --others --ignored --exclude-standard -- tests conftest.py pytest.toml .pytest.toml pytest.ini .pytest.ini ||
-  fail 5/6 "git could not list what it ignores under tests/ (see above)"
+git_list "$tmp/pytest" --others --ignored --exclude-standard -- tests conftest.py ||
+  fail 5/6 "git could not list what it ignores under tests/ and at the root conftest.py (see above)"
 while IFS= read -r -d '' f; do
   case "$f" in
     */__pycache__/*) ;;
     *.py) fail 5/6 "$f is a .py file git ignores, which pytest would read; remove it, or stop ignoring it" ;;
-    pytest.toml|.pytest.toml|pytest.ini|.pytest.ini) fail 5/6 "$f is a pytest configuration file git ignores, which pytest would read in place of pyproject.toml; remove it, or stop ignoring it" ;;
-    *) case "${f##*/}" in test*.txt) fail 5/6 "$f is a doctest file git ignores, which pytest would read; remove it, or stop ignoring it" ;; esac ;;
   esac
 done < "$tmp/pytest"
-uv run --locked pytest || fail 5/6 "a test failed, or pytest could not read its configuration (see above)"
+uv run --locked pytest -c pyproject.toml || fail 5/6 "a test failed, or pytest could not read its configuration (see above)"
 echo "ok   every test passed"
 
 step "6/6  scripts/sync-standards.sh --check: agent-os/standards/base/, the base: section and the script match patchbay-standards at the commit in .version (../patchbay-standards)"

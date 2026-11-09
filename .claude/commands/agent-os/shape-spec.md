@@ -207,8 +207,8 @@ Run the full verification gate, in order. The spec is not complete until every s
 
 1. `bash -n` on every shell script under `scripts/` as git lists them (tracked or untracked,
    not ignored), at a work-tree top that is the repository root, as git says, with no tracked
-   file a `.gitignore` ignores — every script must parse; any other file there fails the step
-   by name
+   file a step reads that a `.gitignore` ignores — every script must parse; any other file there
+   fails the step by name
 2. `uv sync --locked`, then `uv run --locked ruff format --check` over the `.py` and `.pyi`
    files git lists — the locked toolchain syncs, and every file is formatted as ruff format
    writes it
@@ -217,14 +217,13 @@ Run the full verification gate, in order. The spec is not complete until every s
 4. `uv run --locked mypy` over the `.py` and `.pyi` files git lists under `src/` and `tests/` —
    no type error under `[tool.mypy]` (strict)
 5. `uv run --locked pytest` — every test under `tests/` passes (`[tool.pytest.ini_options]`),
-   once no `.py` or `test*.txt` file under `tests/`, and no `conftest.py` at the root or root file
-   pytest reads ahead of `pyproject.toml` (`pytest.toml`, `.pytest.toml`, `pytest.ini`,
-   `.pytest.ini`), is one git ignores
+   once no `.py` file under `tests/`, and no `conftest.py` at the root, is one git ignores
    — steps 2–5 run the tools pinned in `pyproject.toml`'s `[dependency-groups] dev` as `uv.lock`
    resolves them, under the uv `[tool.uv] required-version` pins; step 2's sync fails, before
    any tool runs, when the lockfile no longer matches `pyproject.toml` or the running uv is not
-   the required one; ruff and mypy are given git's list itself, and pytest walks `tests/` only
-   once nothing it would read is ignored
+   the required one, or a `uv.toml` sits at the root; each tool is told by flag to read
+   `pyproject.toml` alone; ruff and mypy are given git's list itself, and pytest walks `tests/`
+   only once nothing it would read is ignored
 6. `scripts/sync-standards.sh --check` — `agent-os/standards/base/`, the `base:` section of
    `agent-os/standards/index.yml` and the script itself are byte-identical to `patchbay-standards`
    at the commit in `agent-os/standards/base/.version`, read from the sibling checkout
@@ -351,7 +350,7 @@ The shape.md file should capture:
 ## Verification Gate
 
 Spec is not complete until `scripts/gate.sh` passes — `bash -n` on every shell script
-under `scripts/` as git lists them, with no tracked file a `.gitignore` ignores;
+under `scripts/` as git lists them, with no tracked file a step reads that a `.gitignore` ignores;
 `uv sync --locked`, then
 `uv run --locked ruff format --check .`, `uv run --locked ruff check .`, `uv run --locked mypy`
 and `uv run --locked pytest` under `pyproject.toml`'s `[tool.*]` rule set and `uv.lock`'s pins;

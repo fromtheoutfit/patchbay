@@ -1,0 +1,260 @@
+diff -u of scripts/gate.sh in the two repositories, made 2026-11-09 on branch
+task/12-gate-spec-3-take-patchbay-standards-17-19-20-and-21-after-the-sync-that-brings-them-in:
+fromtheoutfit/patchbay-standards' at e31f7db, its main and the commit this repository pins, against
+this repository's as shipped by this spec. The rule (base/process/verification-gate.md, "In this
+repository", last paragraph): the two share one skeleton and differ only in their step lists, the
+pins those steps need and the paths each spells from its root, the refusal's pathspec among them.
+Every hunk below is one of those, but one:
+  - paths spelled from each root, and the re-wrapping those widths force;
+  - the step list: the header's step numbers and per-step paragraphs, the needs paragraph, the N/M
+    in banners and fail calls, the bodies of steps 2 to 6 here and 2 and 3 there, the closing line's
+    numbers;
+  - the pins: the PYMARKDOWN_VERSION block there, pyproject.toml's here;
+  - the refusal's pathspec, the union of each gate's listings: scripts '*.py' '*.pyi' here;
+    scripts base README.md there.
+The one deviation, named, ahead of the sibling until the sync brings the standard's correction
+(finding 3 of the review of PR 15, a base proposal): the header's sentence on which .gitignore files
+are read. The sibling's says "Only committed .gitignore files count, so every clone of a commit gets
+the same answer"; this repository's says the work tree's are read and CI's clean checkout is the
+one that counts. It is a comment: the two refusals run the same git command.
+
+$ diff -u <(git -C ../patchbay-standards show e31f7db:scripts/gate.sh) scripts/gate.sh
+--- patchbay-standards/scripts/gate.sh
++++ patchbay/scripts/gate.sh
+@@ -1,11 +1,11 @@
+ #!/usr/bin/env bash
+-# The runnable half of the verification gate: steps 1-3 of the gate every spec in this
+-# repository ends with (.claude/commands/agent-os/shape-spec.md, Task N). Steps 4-6 are
++# The runnable half of the verification gate: steps 1-6 of the gate every spec in this
++# repository ends with (.claude/commands/agent-os/shape-spec.md, Task N). Steps 7-9 are
+ # judgment, recorded in the spec's shape.md: Docs (the documentation the change touches reads
+ # true), Version (the change under [Unreleased] in CHANGELOG.md) and the standards
+-# retrospective per base/process/standards-retrospective.md; nothing here can run them. The
+-# shape of the gate is base/process/verification-gate.md's. CI runs this same script and nothing
+-# else (.github/workflows/gate.yml).
++# retrospective per agent-os/standards/base/process/standards-retrospective.md; nothing here can
++# run them. The shape of the gate is agent-os/standards/base/process/verification-gate.md's.
++# CI runs this same script and nothing else (.github/workflows/gate.yml).
+ #
+ # Usage: scripts/gate.sh        (no arguments; any argument is usage, exit 2)
+ #
+@@ -15,44 +15,64 @@
+ # repository root cannot be entered, each said on stderr with no step run.
+ #
+ # A step that reads files from the tree reads the files git lists (the rule in
+-# base/process/verification-gate.md, "One script"): the tracked files plus the untracked ones git
+-# does not ignore, in one git ls-files -z call, each path once (a path in merge conflict is in the
+-# index once per stage), so an ignored stray such as .DS_Store is never seen and a file a spec adds
+-# before it is staged is. Each listing is written to a file in a temporary directory and git's own
+-# status checked, since neither a pipe nor a process substitution keeps it: a listing git could not
+-# make (a corrupt index) fails its step by name rather than reading as an empty one. Step 1 first
+-# refuses a tree whose work-tree top is not the repository root, a copy without .git inside another
+-# repository included, so no step lists files against an outer repository; it asks git whether
+-# this is inside a work tree (git rev-parse --is-inside-work-tree is true, which it is not in .git/
+-# or a bare repository, where --show-cdup is empty too) and whether it is the top (--show-cdup is
+-# empty), and compares no paths, since a path typed in another case, or spelled C:/ rather than
+-# /c/, names the same directory. Step 1 then refuses every tracked file a committed .gitignore
+-# matches under the paths the gate's listings read (git ls-files --cached --ignored
+-# --exclude-per-directory=.gitignore -- scripts base README.md: a file force-added, or added
+-# before its pattern), naming each under one FAIL line: git lists such a file though the
+-# repository says it is ignored, and a tool that reads .gitignore itself skips it. Only committed
+-# .gitignore files count, so every clone of a commit gets the same answer; .git/info/exclude and
+-# the global excludes file are the machine's, and a file no step reads never fails the gate. A
+-# listed path missing from the disk, or a symlink to nothing, fails its step by name. Step 1
+-# parses a file ending in .sh or starting with a bash shebang; any other file fails the step by
+-# name, since only shell scripts live under scripts/. Step 2 passes pymarkdown the .md files of
+-# its list rather than a directory to walk.
++# agent-os/standards/base/process/verification-gate.md, "One script"): the tracked files plus the
++# untracked ones git does not ignore, in one git ls-files -z call, each path once (a path in merge
++# conflict is in the index once per stage), so an ignored stray such as .DS_Store is never seen and
++# a file a spec adds before it is staged is. Each listing is written to a file in a temporary
++# directory and git's own status checked, since neither a pipe nor a process substitution keeps it:
++# a listing git could not make (a corrupt index) fails its step by name rather than reading as an
++# empty one. Step 1 first refuses a tree whose work-tree top is not the repository root, a copy
++# without .git inside another repository included, so no step lists files against an outer
++# repository; it asks git whether this is inside a work tree (git rev-parse --is-inside-work-tree is
++# true, which it is not in .git/ or a bare repository, where --show-cdup is empty too) and whether
++# it is the top (--show-cdup is empty), and compares no paths, since a path typed in another case,
++# or spelled C:/ rather than /c/, names the same directory. Step 1 then refuses every tracked file a
++# .gitignore matches under the paths the gate's listings read (git ls-files --cached --ignored
++# --exclude-per-directory=.gitignore -- scripts '*.py' '*.pyi', the union of the gate's listings: a
++# file force-added, or added before its pattern), naming each under one FAIL line: git lists such a
++# file though the repository says it is ignored, and a tool that reads .gitignore itself skips it.
++# The .gitignore files read are the work tree's, so a clean clone of a commit answers from that
++# commit's own, and CI's clean checkout is the one that counts: an uncommitted edit to a .gitignore
++# can make a local run disagree with it. .git/info/exclude and the global excludes file are the
++# machine's and never count, and a file no step reads never fails the gate. A listed path missing
++# from the disk, or a symlink to nothing, fails its step by name. Step 1 parses a file ending in .sh
++# or starting with a bash shebang; any other file fails the step by name, since only shell scripts
++# live under scripts/. Steps 2-4 give ruff and mypy git's list itself: the .py and .pyi files it
++# lists (for mypy, those under src/ and tests/), as explicit paths, so git alone decides what
++# .gitignore, .git/info/exclude and the global excludes file hide. pytest has no form that reads a
++# list without also loading the conftest.py of each directory it collects from, so step 5 lets it
++# walk tests/ (testpaths) and first refuses, by name, any .py file git ignores there, or an ignored
++# conftest.py at the root, which pytest loads too: with nothing ignored for pytest to read, its walk
++# reads only what git lists, and -p no:doctest in addopts keeps it from reading any .txt. Step 5's
++# listing keeps --exclude-standard: it guards what pytest reads on this machine, which those files
++# are.
+ #
+-# Step 2 installs the pinned tool as its own check before the tool lints (the rule in
+-# base/process/verification-gate.md, "One script"): uvx missing from PATH, or a pin uvx cannot
+-# install (a version never published, no network the first time), fails the step by name as the
+-# install, never as a finding of pymarkdown's. uvx has no form that installs without running, so the
+-# check runs `pymarkdown version`, which checks nothing in the tree, and a pymarkdown that will not
+-# start fails there under the same reason; only then does pymarkdown lint, and its reason is about
+-# findings and the rule set it reads. The pinned invocation is built once and used by both calls.
+-# The pin lives here because this repository has no package manifest; uv's own version is pinned in
+-# CI only, as setup-uv's input.
++# Steps 2-5 run the Python toolchain: ruff format --check, ruff check, mypy and pytest, each as
++# `uv run --locked <tool>` from the repository root, and each told to read pyproject.toml alone
++# (ruff --config, mypy --config-file, pytest -c), so a ruff.toml, mypy.ini or pytest.ini beside it
++# or a ruff.toml below it, tracked or not, cannot replace the rule set. uv has no such flag that
++# keeps [tool.uv] (--config-file takes only a uv.toml, --no-config drops required-version), so
++# step 2 refuses a uv.toml at the root by name. Pins: the tools are pinned exactly in the
++# [dependency-groups] dev section of pyproject.toml, each with the date it was published, and
++# resolved in uv.lock; uv itself is pinned by [tool.uv] required-version there. Step 2 opens with
++# `uv sync --locked`, which installs exactly what uv.lock names into .venv (a package the lock does
++# not name is removed, as in CI) and fails the step as the sync, before any tool runs, when the
++# lockfile no longer matches pyproject.toml (it is never rewritten), when uv cannot read either file
++# or build the package from them (a license-files entry with no file, say), or when the running uv
++# is not the required version; so a pin edited without re-locking is a failure by name and the gate
++# writes nothing but the ignored .venv and caches. The tools then run under --locked, a check the
++# sync has already passed. The rule set each step reads is the [tool.*] sections of pyproject.toml,
++# named in that file's header; a value ruff or pytest cannot parse fails its step. A pin or a rule
++# is changed deliberately, in the gate's own spec
++# (agent-os/standards/base/process/verification-gate.md), and the gate rerun.
+ #
+-# Step 1 needs bash, git and mktemp. Step 2 needs git, uv (uvx) and, the first time, network access to
+-# fetch the pinned pymarkdown into the uv cache; uv is the one installer the patchbay packages
+-# use, so nothing else is assumed: no Node, no package.json. Step 3 needs git, comm, awk and sed.
+-# Nothing is installed to run the gate but the pinned pymarkdown, which uvx keeps in the uv cache,
+-# outside the repository and the project.
++# Step 1 needs bash, git and mktemp. Steps 2-5 need git, which lists their files, uv on PATH at the
++# version [tool.uv] required-version pins (the one runtime this repository assumes;
++# agent-os/standards/base/process/ownership.md) and, the first time, network access to fetch the
++# locked packages and the interpreter .python-version names into uv's cache. Step 6 needs git,
++# cmp, comm, awk and sed, and the sibling checkout of patchbay-standards at ../patchbay-standards
++# holding the commit pinned in agent-os/standards/base/.version
++# (agent-os/standards/base/process/standards-sync.md). Nothing else is installed to run the gate.
+ set -euo pipefail
+ cd "$(dirname "$0")/.." || { echo "gate: cannot enter the repository root, $(dirname "$0")/..; not run as the gate" >&2; exit 2; }
+ 
+@@ -61,10 +81,6 @@
+   exit 2
+ fi
+ 
+-# Pinned: pymarkdownlnt 0.9.41, published 2026-10-13. Bump deliberately, in the gate's own spec
+-# (base/process/verification-gate.md), and rerun the gate.
+-PYMARKDOWN_VERSION=0.9.41
+-
+ step() { printf '\n== %s\n' "$1"; }
+ fail() { printf 'FAIL  step %s: %s\n' "$1" "$2" >&2; exit 1; }   # fail <step> <reason>
+ git_list() { local out=$1; shift; git ls-files -z "$@" > "$out.raw" && LC_ALL=C sort -zu "$out.raw" > "$out"; }   # git_list <file> <ls-files args...>: git's list into <file>, NUL-separated, sorted, each path once; fails when git cannot list
+@@ -80,52 +96,76 @@
+   [ -e "$2" ] || fail "$1" "$2 is tracked but missing from the disk"
+ }
+ 
+-step "1/3  bash -n on every shell script under scripts/ (tracked or untracked, not ignored), in a tree with no tracked file a .gitignore ignores"
++step "1/6  bash -n on every shell script under scripts/ (tracked or untracked, not ignored), in a tree with no tracked file a .gitignore ignores"
+ root=$(pwd -P)
+ inside=$(git rev-parse --is-inside-work-tree 2>/dev/null) && [ "$inside" = true ] &&
+   cdup=$(git rev-parse --show-cdup 2>/dev/null) && [ -z "$cdup" ] ||
+-  fail 1/3 "not a git work tree rooted at $root; the gate lists files with git ls-files"
++  fail 1/6 "not a git work tree rooted at $root; the gate lists files with git ls-files"
+ tmp=$(mktemp -d) && [ -n "$tmp" ] && [ -d "$tmp" ] ||
+-  fail 1/3 "mktemp -d made no temporary directory for git's listings (see above)"
++  fail 1/6 "mktemp -d made no temporary directory for git's listings (see above)"
+ trap 'rm -rf "$tmp"' EXIT
+-git_list "$tmp/ignored" --cached --ignored --exclude-per-directory=.gitignore -- scripts base README.md ||
+-  fail 1/3 "git could not list the tracked files a .gitignore ignores (see above)"
++git_list "$tmp/ignored" --cached --ignored --exclude-per-directory=.gitignore -- scripts '*.py' '*.pyi' ||
++  fail 1/6 "git could not list the tracked files a .gitignore ignores (see above)"
+ if [ -s "$tmp/ignored" ]; then
+-  fail_list 1/3 "tracked, but a .gitignore ignores them; stop ignoring each (a ! pattern, and for a file under an ignored directory, ignore dir/* rather than dir/ first) or stop tracking it (git rm --cached)" "$tmp/ignored"
++  fail_list 1/6 "tracked, but a .gitignore ignores them; stop ignoring each (a ! pattern, and for a file under an ignored directory, ignore dir/* rather than dir/ first) or stop tracking it (git rm --cached)" "$tmp/ignored"
+ fi
+-listed "$tmp/scripts" scripts || fail 1/3 "git could not list the files under scripts/ (see above)"
++listed "$tmp/scripts" scripts || fail 1/6 "git could not list the files under scripts/ (see above)"
+ n=0
+ while IFS= read -r -d '' f; do
+-  present 1/3 "$f"
++  present 1/6 "$f"
+   case "$f" in
+     *.sh) ;;
+-    *) head -n 1 "$f" | grep -Eq '^#!.*bash' || fail 1/3 "$f is not a shell script; only shell scripts live under scripts/" ;;
++    *) head -n 1 "$f" | grep -Eq '^#!.*bash' || fail 1/6 "$f is not a shell script; only shell scripts live under scripts/" ;;
+   esac
+-  bash -n "$f" || fail 1/3 "$f does not parse"
++  bash -n "$f" || fail 1/6 "$f does not parse"
+   echo "ok   $f"; n=$((n + 1))
+ done < "$tmp/scripts"
+-[ "$n" -gt 0 ] || fail 1/3 "git lists no file under scripts/"
++[ "$n" -gt 0 ] || fail 1/6 "git lists no file under scripts/"
+ 
+-step "2/3  uvx installs pymarkdownlnt $PYMARKDOWN_VERSION, then pymarkdown lints the .md files under base/ and README.md as git lists them (rules in .pymarkdown.yaml)"
+-listed "$tmp/md" base README.md || fail 2/3 "git could not list the files under base/ and README.md (see above)"
+-md=()
++step "2/6  uv sync --locked, then uv run --locked ruff format --check over the .py and .pyi files git lists (the locked toolchain; the formatter)"
++listed "$tmp/py" '*.py' '*.pyi' || fail 2/6 "git could not list the .py and .pyi files of the tree (see above)"
++py=()
+ while IFS= read -r -d '' f; do
+-  case "$f" in *.md) ;; *) continue ;; esac
+-  present 2/3 "$f"
+-  md+=("$f")
+-done < "$tmp/md"
+-[ "${#md[@]}" -gt 0 ] || fail 2/3 "git lists no .md file under base/ or README.md"
+-command -v uvx >/dev/null 2>&1 || fail 2/3 "uvx is not on PATH; step 2 runs the pinned pymarkdown through it"
+-pmd=(uvx --from "pymarkdownlnt==$PYMARKDOWN_VERSION" pymarkdown)   # the pinned invocation, for both calls
+-v=$("${pmd[@]}" version) ||
+-  fail 2/3 "uvx could not install pymarkdownlnt==$PYMARKDOWN_VERSION, the pinned version, or pymarkdown would not start (see above)"
+-echo "ok   pymarkdownlnt==$PYMARKDOWN_VERSION installed through uvx (pymarkdown version: $v)"
+-"${pmd[@]}" --strict-config --config .pymarkdown.yaml scan "${md[@]}" ||
+-  fail 2/3 "pymarkdown reported findings, or could not read .pymarkdown.yaml (see above)"
+-echo "ok   no findings in ${#md[@]} file(s)"
++  present 2/6 "$f"; py+=("$f")
++done < "$tmp/py"
++[ "${#py[@]}" -gt 0 ] || fail 2/6 "git lists no .py or .pyi file"
++command -v uv >/dev/null 2>&1 || fail 2/6 "uv is not on PATH; steps 2-5 run the pinned tools through uv run --locked"
++[ ! -e uv.toml ] && [ ! -L uv.toml ] ||
++  fail 2/6 "uv.toml is at the root, where uv reads it ahead of [tool.uv] in pyproject.toml; remove it, uv is configured in pyproject.toml alone"
++uv sync --locked ||
++  fail 2/6 "uv could not sync the locked toolchain: uv.lock does not match pyproject.toml, uv could not read them or build the package, or this uv is not the version [tool.uv] requires (see above)"
++echo "ok   the locked toolchain synced"
++uv run --locked ruff format --config pyproject.toml --check -- "${py[@]}" ||
++  fail 2/6 "a file is not formatted as ruff format would write it, or ruff could not read its settings (see above)"
++echo "ok   ${#py[@]} file(s) formatted"
+ 
+-step "3/3  index.yml lists exactly the tracked files under base/"
+-scripts/check-index.sh ||
+-  fail 3/3 "index.yml and the tracked files under base/ disagree, or the index symlink is wrong (see above)"
++step "3/6  uv run --locked ruff check over the same files (the linter: [tool.ruff.lint] of pyproject.toml)"
++uv run --locked ruff check --config pyproject.toml -- "${py[@]}" || fail 3/6 "ruff check found a violation, or could not read its rule set (see above)"
++echo "ok   no violation"
+ 
+-printf '\nGate steps 1-3 passed. Steps 4-6 are judgment, recorded in shape.md: Docs, Version, the standards retrospective.\n'
++step "4/6  uv run --locked mypy over the .py and .pyi files git lists under src/ and tests/ ([tool.mypy] of pyproject.toml: strict)"
++src=()
++for f in "${py[@]}"; do
++  case "$f" in src/*|tests/*) src+=("$f") ;; esac
++done
++[ "${#src[@]}" -gt 0 ] || fail 4/6 "git lists no .py or .pyi file under src/ or tests/"
++uv run --locked mypy --config-file pyproject.toml -- "${src[@]}" || fail 4/6 "mypy found a type error (see above)"
++echo "ok   no type error"
++
++step "5/6  uv run --locked pytest ([tool.pytest.ini_options] of pyproject.toml, over tests/, once nothing pytest would read is one git ignores)"
++git_list "$tmp/pytest" --others --ignored --exclude-standard -- tests conftest.py ||
++  fail 5/6 "git could not list what it ignores under tests/ and at the root conftest.py (see above)"
++while IFS= read -r -d '' f; do
++  case "$f" in
++    */__pycache__/*) ;;
++    *.py) fail 5/6 "$f is a .py file git ignores, which pytest would read; remove it, or stop ignoring it" ;;
++  esac
++done < "$tmp/pytest"
++uv run --locked pytest -c pyproject.toml || fail 5/6 "a test failed, or pytest could not read its configuration (see above)"
++echo "ok   every test passed"
++
++step "6/6  scripts/sync-standards.sh --check: agent-os/standards/base/, the base: section and the script match patchbay-standards at the commit in .version (../patchbay-standards)"
++scripts/sync-standards.sh --check ||
++  fail 6/6 "drift from patchbay-standards at the pinned commit, or the sibling checkout ../patchbay-standards unusable (see above)"
++
++printf '\nGate steps 1-6 passed. Steps 7-9 are judgment, recorded in shape.md: Docs, Version, the standards retrospective.\n'

@@ -1,0 +1,303 @@
+The guard mutations of the revision after the review of PR 15, run 2026-11-09 on branch
+task/12-gate-spec-3-take-patchbay-standards-17-19-20-and-21-after-the-sync-that-brings-them-in,
+after the last edit to the gate's scripts. Each mutation is a fresh copy of the tree as git lists it
+(tracked plus untracked-not-ignored), made in a scratch directory outside the repository and not a
+git repository itself, with one guard this spec added or changed deleted or put back as it was, and
+the case that covers it run from that copy. The copy has no history, so the cases' runs of the
+scripts at 912987a and earlier are skipped there, as the harness says. A harness mutation must come
+back UNEXPECTED, harness exit 1; M11 and M12 are of src/patchbay/events.py and run that module's
+tests, which must fail, exit 1. The unmutated runs of the same cases are in gate-negative-tests.txt.
+Below each mutation: the diff, then the UNEXPECTED or FAILED lines, and the count. Nothing here is a
+gate step or part of the harness; it is the evidence that the cases discriminate.
+
+### M1: step 2's ruff format without --config, as it was at 912987a
+--- scripts/gate.sh (as shipped)
++++ scripts/gate.sh (mutated)
+@@ -136,5 +136,5 @@
+   fail 2/6 "uv could not sync the locked toolchain: uv.lock does not match pyproject.toml, uv could not read them or build the package, or this uv is not the version [tool.uv] requires (see above)"
+ echo "ok   the locked toolchain synced"
+-uv run --locked ruff format --config pyproject.toml --check -- "${py[@]}" ||
++uv run --locked ruff format --check -- "${py[@]}" ||
+   fail 2/6 "a file is not formatted as ruff format would write it, or ruff could not read its settings (see above)"
+ echo "ok   ${#py[@]} file(s) formatted"
+$ scripts/gate-negative-tests.sh s   (in the mutated copy)
+ok   agent-os/standards/base and the base: section of agent-os/standards/index.yml match patchbay-standards at e31f7dbfb474752339a43fe08a37ab26c7956f5c
+
+Gate steps 1-6 passed. Steps 7-9 are judgment, recorded in shape.md: Docs, Version, the standards retrospective.
+exit=0  UNEXPECTED (expected 1)
+--
+ok   agent-os/standards/base and the base: section of agent-os/standards/index.yml match patchbay-standards at e31f7dbfb474752339a43fe08a37ab26c7956f5c
+
+Gate steps 1-6 passed. Steps 7-9 are judgment, recorded in shape.md: Docs, Version, the standards retrospective.
+exit=0  UNEXPECTED (expected 1)
+--
+19 runs, 2 unexpected
+harness exit=1
+result: as required
+
+### M2: step 3's ruff check without --config
+--- scripts/gate.sh (as shipped)
++++ scripts/gate.sh (mutated)
+@@ -141,5 +141,5 @@
+ 
+ step "3/6  uv run --locked ruff check over the same files (the linter: [tool.ruff.lint] of pyproject.toml)"
+-uv run --locked ruff check --config pyproject.toml -- "${py[@]}" || fail 3/6 "ruff check found a violation, or could not read its rule set (see above)"
++uv run --locked ruff check -- "${py[@]}" || fail 3/6 "ruff check found a violation, or could not read its rule set (see above)"
+ echo "ok   no violation"
+ 
+$ scripts/gate-negative-tests.sh s   (in the mutated copy)
+ok   agent-os/standards/base and the base: section of agent-os/standards/index.yml match patchbay-standards at e31f7dbfb474752339a43fe08a37ab26c7956f5c
+
+Gate steps 1-6 passed. Steps 7-9 are judgment, recorded in shape.md: Docs, Version, the standards retrospective.
+exit=0  UNEXPECTED (expected 1)
+--
+ok   agent-os/standards/base and the base: section of agent-os/standards/index.yml match patchbay-standards at e31f7dbfb474752339a43fe08a37ab26c7956f5c
+
+Gate steps 1-6 passed. Steps 7-9 are judgment, recorded in shape.md: Docs, Version, the standards retrospective.
+exit=0  UNEXPECTED (expected 1)
+--
+ok   agent-os/standards/base and the base: section of agent-os/standards/index.yml match patchbay-standards at e31f7dbfb474752339a43fe08a37ab26c7956f5c
+
+Gate steps 1-6 passed. Steps 7-9 are judgment, recorded in shape.md: Docs, Version, the standards retrospective.
+exit=0  UNEXPECTED (expected 1)
+--
+19 runs, 3 unexpected
+harness exit=1
+result: as required
+
+### M3: step 4's mypy without --config-file
+--- scripts/gate.sh (as shipped)
++++ scripts/gate.sh (mutated)
+@@ -150,5 +150,5 @@
+ done
+ [ "${#src[@]}" -gt 0 ] || fail 4/6 "git lists no .py or .pyi file under src/ or tests/"
+-uv run --locked mypy --config-file pyproject.toml -- "${src[@]}" || fail 4/6 "mypy found a type error (see above)"
++uv run --locked mypy -- "${src[@]}" || fail 4/6 "mypy found a type error (see above)"
+ echo "ok   no type error"
+ 
+$ scripts/gate-negative-tests.sh s   (in the mutated copy)
+ok   agent-os/standards/base and the base: section of agent-os/standards/index.yml match patchbay-standards at e31f7dbfb474752339a43fe08a37ab26c7956f5c
+
+Gate steps 1-6 passed. Steps 7-9 are judgment, recorded in shape.md: Docs, Version, the standards retrospective.
+exit=0  UNEXPECTED (expected 1)
+--
+ok   agent-os/standards/base and the base: section of agent-os/standards/index.yml match patchbay-standards at e31f7dbfb474752339a43fe08a37ab26c7956f5c
+
+Gate steps 1-6 passed. Steps 7-9 are judgment, recorded in shape.md: Docs, Version, the standards retrospective.
+exit=0  UNEXPECTED (expected 1)
+--
+19 runs, 2 unexpected
+harness exit=1
+result: as required
+
+### M4: step 5's pytest without -c
+--- scripts/gate.sh (as shipped)
++++ scripts/gate.sh (mutated)
+@@ -162,5 +162,5 @@
+   esac
+ done < "$tmp/pytest"
+-uv run --locked pytest -c pyproject.toml || fail 5/6 "a test failed, or pytest could not read its configuration (see above)"
++uv run --locked pytest || fail 5/6 "a test failed, or pytest could not read its configuration (see above)"
+ echo "ok   every test passed"
+ 
+$ scripts/gate-negative-tests.sh q   (in the mutated copy)
+ok   agent-os/standards/base and the base: section of agent-os/standards/index.yml match patchbay-standards at e31f7dbfb474752339a43fe08a37ab26c7956f5c
+
+Gate steps 1-6 passed. Steps 7-9 are judgment, recorded in shape.md: Docs, Version, the standards retrospective.
+exit=0  UNEXPECTED (expected 1)
+--
+ok   agent-os/standards/base and the base: section of agent-os/standards/index.yml match patchbay-standards at e31f7dbfb474752339a43fe08a37ab26c7956f5c
+
+Gate steps 1-6 passed. Steps 7-9 are judgment, recorded in shape.md: Docs, Version, the standards retrospective.
+exit=0  UNEXPECTED (expected 1)
+--
+ok   agent-os/standards/base and the base: section of agent-os/standards/index.yml match patchbay-standards at e31f7dbfb474752339a43fe08a37ab26c7956f5c
+
+Gate steps 1-6 passed. Steps 7-9 are judgment, recorded in shape.md: Docs, Version, the standards retrospective.
+exit=0  UNEXPECTED (expected 1)
+--
+ok   agent-os/standards/base and the base: section of agent-os/standards/index.yml match patchbay-standards at e31f7dbfb474752339a43fe08a37ab26c7956f5c
+
+Gate steps 1-6 passed. Steps 7-9 are judgment, recorded in shape.md: Docs, Version, the standards retrospective.
+exit=0  UNEXPECTED (expected 1)
+--
+ok   agent-os/standards/base and the base: section of agent-os/standards/index.yml match patchbay-standards at e31f7dbfb474752339a43fe08a37ab26c7956f5c
+
+Gate steps 1-6 passed. Steps 7-9 are judgment, recorded in shape.md: Docs, Version, the standards retrospective.
+exit=0  UNEXPECTED (expected 1)
+--
+ok   agent-os/standards/base and the base: section of agent-os/standards/index.yml match patchbay-standards at e31f7dbfb474752339a43fe08a37ab26c7956f5c
+
+Gate steps 1-6 passed. Steps 7-9 are judgment, recorded in shape.md: Docs, Version, the standards retrospective.
+exit=0  UNEXPECTED (expected 1)
+--
+21 runs, 6 unexpected
+harness exit=1
+result: as required
+
+### M5: step 2's refusal of a root uv.toml deleted
+--- scripts/gate.sh (as shipped)
++++ scripts/gate.sh (mutated)
+@@ -131,6 +131,4 @@
+ [ "${#py[@]}" -gt 0 ] || fail 2/6 "git lists no .py or .pyi file"
+ command -v uv >/dev/null 2>&1 || fail 2/6 "uv is not on PATH; steps 2-5 run the pinned tools through uv run --locked"
+-[ ! -e uv.toml ] && [ ! -L uv.toml ] ||
+-  fail 2/6 "uv.toml is at the root, where uv reads it ahead of [tool.uv] in pyproject.toml; remove it, uv is configured in pyproject.toml alone"
+ uv sync --locked ||
+   fail 2/6 "uv could not sync the locked toolchain: uv.lock does not match pyproject.toml, uv could not read them or build the package, or this uv is not the version [tool.uv] requires (see above)"
+$ scripts/gate-negative-tests.sh s   (in the mutated copy)
+ok   agent-os/standards/base and the base: section of agent-os/standards/index.yml match patchbay-standards at e31f7dbfb474752339a43fe08a37ab26c7956f5c
+
+Gate steps 1-6 passed. Steps 7-9 are judgment, recorded in shape.md: Docs, Version, the standards retrospective.
+exit=0  UNEXPECTED (expected 1)
+--
+ok   agent-os/standards/base and the base: section of agent-os/standards/index.yml match patchbay-standards at e31f7dbfb474752339a43fe08a37ab26c7956f5c
+
+Gate steps 1-6 passed. Steps 7-9 are judgment, recorded in shape.md: Docs, Version, the standards retrospective.
+exit=0  UNEXPECTED (expected 1)
+--
+ok   agent-os/standards/base and the base: section of agent-os/standards/index.yml match patchbay-standards at e31f7dbfb474752339a43fe08a37ab26c7956f5c
+
+Gate steps 1-6 passed. Steps 7-9 are judgment, recorded in shape.md: Docs, Version, the standards retrospective.
+exit=0  UNEXPECTED (expected 1)
+--
+19 runs, 3 unexpected
+harness exit=1
+result: as required
+
+### M6: -p no:doctest removed from addopts
+--- pyproject.toml (as shipped)
++++ pyproject.toml (mutated)
+@@ -135,5 +135,5 @@
+ # -p no:doctest: the plugin collects test*.txt under tests/, which git may ignore, and no test here
+ # is a doctest, so pytest reads no .txt (the revision after the review of PR 15, probes.txt).
+-addopts = "-q --strict-markers --strict-config -p no:doctest"
++addopts = "-q --strict-markers --strict-config"
+ markers = [
+     "integration: needs a running instrument; not selected by the gate until a spec says so",
+$ scripts/gate-negative-tests.sh q   (in the mutated copy)
+FAILED tests/unit/test_local.txt::test_local.txt
+1 failed, 276 passed in 0.71s
+FAIL  step 5/6: a test failed, or pytest could not read its configuration (see above)
+exit=1  UNEXPECTED (expected 0)
+--
+21 runs, 1 unexpected
+harness exit=1
+result: as required
+
+### M7: step 4's filter deleted, mypy given every file of step 2's list
+--- scripts/gate.sh (as shipped)
++++ scripts/gate.sh (mutated)
+@@ -147,5 +147,5 @@
+ src=()
+ for f in "${py[@]}"; do
+-  case "$f" in src/*|tests/*) src+=("$f") ;; esac
++  src+=("$f")
+ done
+ [ "${#src[@]}" -gt 0 ] || fail 4/6 "git lists no .py or .pyi file under src/ or tests/"
+$ scripts/gate-negative-tests.sh k   (in the mutated copy)
+outside_probe.py:8: error: Returning Any from function declared to return "int"  [no-any-return]
+Found 1 error in 1 file (checked 20 source files)
+FAIL  step 4/6: mypy found a type error (see above)
+exit=1  UNEXPECTED (expected 0)
+--
+2 runs, 1 unexpected
+harness exit=1
+result: as required
+
+### M8: step 1's refusal over the whole tree, as it was at 912987a
+--- scripts/gate.sh (as shipped)
++++ scripts/gate.sh (mutated)
+@@ -105,5 +105,5 @@
+   fail 1/6 "mktemp -d made no temporary directory for git's listings (see above)"
+ trap 'rm -rf "$tmp"' EXIT
+-git_list "$tmp/ignored" --cached --ignored --exclude-per-directory=.gitignore -- scripts '*.py' '*.pyi' ||
++git_list "$tmp/ignored" --cached --ignored --exclude-per-directory=.gitignore -- . ||
+   fail 1/6 "git could not list the tracked files a .gitignore ignores (see above)"
+ if [ -s "$tmp/ignored" ]; then
+$ scripts/gate-negative-tests.sh p   (in the mutated copy)
+== 1/6  bash -n on every shell script under scripts/ (tracked or untracked, not ignored), in a tree with no tracked file a .gitignore ignores
+FAIL  step 1/6: tracked, but a .gitignore ignores them; stop ignoring each (a ! pattern, and for a file under an ignored directory, ignore dir/* rather than dir/ first) or stop tracking it (git rm --cached):
+        notes.log
+exit=1  UNEXPECTED (expected 0)
+--
+21 runs, 1 unexpected
+harness exit=1
+result: as required
+
+### M9: step 2's listing, its status ignored
+--- scripts/gate.sh (as shipped)
++++ scripts/gate.sh (mutated)
+@@ -124,5 +124,5 @@
+ 
+ step "2/6  uv sync --locked, then uv run --locked ruff format --check over the .py and .pyi files git lists (the locked toolchain; the formatter)"
+-listed "$tmp/py" '*.py' '*.pyi' || fail 2/6 "git could not list the .py and .pyi files of the tree (see above)"
++listed "$tmp/py" '*.py' '*.pyi' || true
+ py=()
+ while IFS= read -r -d '' f; do
+$ scripts/gate-negative-tests.sh r   (in the mutated copy)
+git (test shim): refusing: ls-files -z --cached --others --exclude-standard -- *.py *.pyi
+scripts/gate.sh: line 130: /var/folders/l4/jz4g7psj5h1gxvk_6zp29rvm0000gn/T/tmp.tki7wYcEAM/py: No such file or directory
+FAIL  step 2/6: git lists no .py or .pyi file
+exit=1  UNEXPECTED (the output does not say: git (test shim): refusing
+--
+2 runs, 1 unexpected
+harness exit=1
+result: as required
+
+### M10: step 5's listing, its status ignored
+--- scripts/gate.sh (as shipped)
++++ scripts/gate.sh (mutated)
+@@ -154,6 +154,5 @@
+ 
+ step "5/6  uv run --locked pytest ([tool.pytest.ini_options] of pyproject.toml, over tests/, once nothing pytest would read is one git ignores)"
+-git_list "$tmp/pytest" --others --ignored --exclude-standard -- tests conftest.py ||
+-  fail 5/6 "git could not list what it ignores under tests/ and at the root conftest.py (see above)"
++git_list "$tmp/pytest" --others --ignored --exclude-standard -- tests conftest.py || true
+ while IFS= read -r -d '' f; do
+   case "$f" in
+$ scripts/gate-negative-tests.sh r   (in the mutated copy)
+ok   agent-os/standards/base and the base: section of agent-os/standards/index.yml match patchbay-standards at e31f7dbfb474752339a43fe08a37ab26c7956f5c
+
+Gate steps 1-6 passed. Steps 7-9 are judgment, recorded in shape.md: Docs, Version, the standards retrospective.
+exit=0  UNEXPECTED (expected 1)
+--
+2 runs, 1 unexpected
+harness exit=1
+result: as required
+
+### M11: _in_utc reading None at an instant as zero (finding 8's later change)
+--- src/patchbay/events.py (as shipped)
++++ src/patchbay/events.py (mutated)
+@@ -75,5 +75,5 @@
+             raise ValueError(msg)
+         try:
+-            in_utc = zone.utcoffset(None) == timedelta(0) and at.utcoffset() == timedelta(0)
++            in_utc = zone.utcoffset(None) == timedelta(0) and at.utcoffset() in (None, timedelta(0))
+             held = at.astimezone(UTC) if in_utc else None
+             given = f"{at.isoformat()} ({zone})"
+$ uv run --locked pytest -c pyproject.toml tests/unit/test_events.py   (in the mutated copy)
+FAILED tests/unit/test_events.py::test_an_event_s_time_is_refused_unless_utc[zero for no instant, None at this one]
+Installed 30 packages in 45ms
+exit=1
+result: as required
+
+### M12: _in_utc's except no longer catching what a zone raises (finding 5)
+--- src/patchbay/events.py (as shipped)
++++ src/patchbay/events.py (mutated)
+@@ -78,5 +78,5 @@
+             held = at.astimezone(UTC) if in_utc else None
+             given = f"{at.isoformat()} ({zone})"
+-        except Exception as error:
++        except ZeroDivisionError as error:
+             msg = (
+                 "an event's time is in UTC, given a zone that cannot say its offset "
+$ uv run --locked pytest -c pyproject.toml tests/unit/test_events.py   (in the mutated copy)
+FAILED tests/unit/test_events.py::test_an_event_s_time_is_refused_unless_utc[a bare tzinfo]
+FAILED tests/unit/test_events.py::test_an_event_s_time_is_refused_unless_utc[a zone raising at this instant]
+FAILED tests/unit/test_events.py::test_an_event_s_time_is_refused_unless_utc[a zone answering an int]
+Installed 30 packages in 45ms
+exit=1
+result: as required
+
+12 mutations, 12 as required, 0 not
