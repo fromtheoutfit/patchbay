@@ -42,12 +42,15 @@ added, removed or changed, the old and new commit, what the index and the script
 JSON object on stdout after the last write, for a wrapper to read. Exit 0 is a sync whose result
 it compared against the export and found equal; 1 is a result that did not match; 2 is usage or a
 precondition, each named: a bad flag or two mode flags, a directory that is not the top of a git
-work tree, `<path>` not a patchbay-standards checkout, no `origin/HEAD` to default the ref to,
-`<ref>` not a commit, no parseable `base:` section in the project's index without `--init` or in
-the commit's `index.yml`, a path under `base/` that is not a regular file or holds a control
-character. An explicit `<ref>` whose commit is not on origin's default branch is synced with a
-`WARN` line naming it: a commit not pushed or not merged can be rebased or abandoned, leaving the
-pin at nothing.
+work tree (asked of git, comparing no paths: `git rev-parse --is-inside-work-tree` printing `true`,
+which it does not in `.git/` or a bare repository, and `--show-cdup` empty, so a project's root
+typed in another case is its root), `<path>` not a patchbay-standards checkout, no `origin/HEAD` to
+default the ref to, `<ref>` not a commit, no parseable `base:` section in the project's index
+without `--init` or in the commit's `index.yml`, a path under `base/` that is not a regular file or
+holds a control character, a listing of the project's files git cannot make. Each is found before
+anything is written. An explicit `<ref>` whose commit is not on origin's default branch is
+synced with a `WARN` line naming it: a commit not pushed or not merged can be rebased or abandoned,
+leaving the pin at nothing.
 
 ## The invariant
 
@@ -76,8 +79,17 @@ happens to be on. Syncing forward is deliberate: read this repository's `CHANGEL
 pinned commit to the target first, since the `base/` lines of each entry are what the sync will
 bring in; run the sync; read what it reports; commit the result in its own change set, titled
 `chore: sync base standards to <sha>`. That commit changes nothing but `agent-os/standards/base/`,
-`.version`, the `base:` section and `scripts/sync-standards.sh`. Work the new standards ask of the
-project's own files is its own spec, after.
+`.version`, the `base:` section, `scripts/sync-standards.sh` and the project's `CHANGELOG.md`,
+where it adds one entry under `[Unreleased]` naming the old commit and the new, as the sync's
+report gives them (`sync base standards: <old> -> <new>`; a first sync names the new alone), so a
+sync forward is recorded by the change that makes it. The script writes no `CHANGELOG.md`: the
+person who syncs writes the entry, in the same commit. Work the new standards ask of the project's
+own files is its own spec, after.
+
+A base change that leaves a consuming project's gate files out of step with a rule says so where
+the project's sync will read it. Its entry in this repository's `CHANGELOG.md` names the project
+and the work, and an issue in that project records the work for the gate spec that follows its
+sync. The sync brings the rule; the project's gate spec brings its gate files in step.
 
 ## The index
 
@@ -110,7 +122,9 @@ gate file in every project, so it changes only in its own spec here, carrying it
 o to v in `scripts/gate-negative-tests.sh`, each on a scratch checkout whose `HEAD` and
 `origin/main` hold the working tree's files beside a scratch Agent OS project with its own index
 sections and standards, the sync run from the project with the sibling checkout as the default
-path and its `origin/main` as the default ref. Gate step 1 parses the script.
+path and its `origin/main` as the default ref; u holds its refusals, a folder below the project's
+root and its `.git/` among them, and its root typed in upper case passing; t and u hold a project
+index git cannot read, refused by name. Gate step 1 parses the script.
 
 ## In a consuming project
 

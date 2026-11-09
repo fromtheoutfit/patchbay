@@ -52,12 +52,16 @@
 # path holding a control character, here or in the commit, is refused, so every list below and
 # the JSON hold by construction.
 #
+# The work-tree root is asked of git: --is-inside-work-tree is true there (it is false in .git/ and
+# in a bare repository, where --show-cdup is empty too) and --show-cdup is empty. No paths are
+# compared, so a project's root typed in another case, or spelled C:/ rather than /c/, is its root.
+#
 # Exit status: 0 success; 1 a failed check (drift, or a sync whose result does not match the
 # export); 2 usage or a precondition (a bad flag or two mode flags, not at a work-tree root, run
 # inside patchbay-standards itself, <path> not a patchbay-standards checkout, no origin/HEAD to
 # default to, <ref> not a commit, the pinned commit absent, no parseable base: section here
 # without --init or in the commit, a path that is not a regular file or holds a control
-# character). Needs git, cmp, comm, awk, sed.
+# character, a listing of the project's files git could not make). Needs git, cmp, comm, awk, sed.
 set -euo pipefail
 export LC_ALL=C   # one collation for every sort, comm and awk comparison below
 
@@ -94,7 +98,8 @@ done
 
 # Preconditions, the cheap ones first; nothing is read from the commit until they all hold.
 root=$(pwd -P)
-if ! top=$(git rev-parse --show-toplevel 2>/dev/null) || [ "$top" != "$root" ]; then
+if ! inside=$(git rev-parse --is-inside-work-tree 2>/dev/null) || [ "$inside" != true ] ||
+   ! cdup=$(git rev-parse --show-cdup 2>/dev/null) || [ -n "$cdup" ]; then   # git says: a work tree, and its top
   die 2 "run from the consuming project's root, the top of its git work tree (here: $root)"
 fi
 base=agent-os/standards/base
@@ -264,8 +269,10 @@ project_files() {
   local f
   : > "$tmp/have.raw"
   [ -d "$base" ] || return 0
-  { git -c core.quotePath=false ls-files -z -- "$base"
-    git -c core.quotePath=false ls-files -z --others --exclude-standard -- "$base"; } > "$tmp/ls"
+  if ! git -c core.quotePath=false ls-files -z -- "$base" > "$tmp/ls" ||
+     ! git -c core.quotePath=false ls-files -z --others --exclude-standard -- "$base" >> "$tmp/ls"; then
+    die 2 "git could not list the files under $base (see above)"   # before any write: nothing between this and the verification listing writes .git/index
+  fi
   while IFS= read -r -d '' f; do
     [ -f "$f" ] || continue
     has_control "$f" && die 2 "a path under $base holds a control character and is refused: $(printf '%q' "$f")"
