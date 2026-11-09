@@ -21,28 +21,28 @@
 # exit 1 for every step's failure and sync-standards.sh exit 2 for every precondition, so a status
 # alone cannot tell a guard from its absence. A text naming gate.sh's FAIL  step N/M line also holds
 # the run to no step banner past step N, and one that is gate.sh's usage or cd line to none at all,
-# so the steps after a failure are checked as never reached, not assumed. run takes text only for
-# a run expected to fail; a passing run names the lines its output must hold with holds after it
-# (or through check, as j's replay does), and times holds one whole line to an exact count. The
-# text says nothing of what else was printed, so a case that says step 6 names one drift alone
-# follows its run with only, which holds the lines of step 6's drift report to exactly those it
-# names, and a case that says step 1 refuses named files follows its run with named, which holds
-# the entries under its FAIL line to exactly those. A mismatch of any of these is marked UNEXPECTED
-# and the harness exits 1 at the end naming the count, so the transcript's last line says whether
-# every case behaved. A change to these assertions is shown to discriminate by a mutation, the
-# guard it covers deleted in a copy and the case coming back UNEXPECTED, recorded in the spec's
-# verification/ beside the run. The tests are rerun whenever the gate's files change, and whenever
-# a spec adds, removes or renames a file under a directory mk copies, since a case can rest on
-# what that directory holds. Every setup step (a command that builds a case's state) stops the harness by name
-# when it fails (exit 2) rather than letting a case fail for the wrong reason. Nothing in the tree
-# and nothing in ../patchbay-standards is written: the scratch directory is refused unless mktemp
-# made it, outside this repository, and only then is the trap that removes it set. The transcript
-# of one run is kept in the spec's verification/ folder as gate-negative-tests.txt (every test but
-# j) and ci-negative-test.txt (j, the CI replay), each holding that one run and ending on its count;
-# an earlier run kept as evidence, a failing one before a fix, goes in a file of its own.
+# so the steps after a failure are checked as never reached, not assumed. run takes text only for a
+# run expected to fail; a passing run names the lines its output must hold with holds after it (or
+# through check, as j's replay does), and times holds one whole line to an exact count. The text
+# says nothing of what else was printed, so a case that says step 6 names one drift alone follows
+# its run with only, which holds the lines of step 6's drift report to exactly those it names, and a
+# case that says step 1 refuses named files follows its run with named, which holds the entries
+# under its FAIL line to exactly those. A mismatch of any of these is marked UNEXPECTED and the
+# harness exits 1 at the end naming the count, so the transcript's last line says whether every case
+# behaved. A change to these assertions is shown to discriminate by a mutation, the guard it covers
+# deleted in a copy and the case coming back UNEXPECTED, recorded in the spec's verification/ beside
+# the run. The tests are rerun whenever the gate's files change, and whenever a spec adds, removes
+# or renames a file under a directory mk copies, since a case can rest on what that directory holds.
+# Every setup step (a command that builds a case's state) stops the harness by name when it fails
+# (exit 2) rather than letting a case fail for the wrong reason. Nothing in the tree and nothing in
+# ../patchbay-standards is written: the scratch directory is refused unless mktemp made it, outside
+# this repository, and only then is the trap that removes it set. The transcript of one run is kept
+# in the spec's verification/ folder as gate-negative-tests.txt (every test but j) and
+# ci-negative-test.txt (j, the CI replay), each holding that one run and ending on its count; an
+# earlier run kept as evidence, a failing one before a fix, goes in a file of its own.
 #
 # Usage: scripts/gate-negative-tests.sh [test ...]   (default: every test but j; "all" adds j)
-#   tests: a b c d e f g h i k l m n o p q r u j
+#   tests: a b c d e f g h i k l m n o p q r s u j
 #   a  an unparsable script under scripts/: gate.sh stops at step 1, exit 1, step 2 never reached
 #   b  one byte appended to a file under agent-os/standards/base/: step 6 names it changed alone
 #   c  a hand-edited entry in the base: section of the index: step 6 reports the section alone
@@ -54,8 +54,8 @@
 #      merge conflict is listed once; a corrupt index, a git that refuses step 1's listing of
 #      scripts/, a mktemp that makes no directory, a tracked non-shell file, a tracked script
 #      missing from the disk, a tracked symlink to nothing, a copy that is not a git work tree, the
-#      same copy inside another repository's work tree, under another repository's .git/ and in a bare
-#      repository each fail by name; the gate at 92cd215, 6adf50e or 2c98c8a is shown where it had
+#      same copy inside another repository's work tree, under another repository's .git/ and in a
+#      bare repository each fail by name; the gate at 92cd215, 6adf50e or 2c98c8a is shown where it had
 #      the bug, as it was
 #   h  a misformatted module under src/patchbay/: step 2 names it, exit 1, step 3 never reached
 #   i  a formatted module with an unused import: step 2 passes, step 3 reports F401, exit 1
@@ -73,28 +73,33 @@
 #      and type faults passes the gate; force-added while .gitignore still matches it, step 1 names
 #      it alone, and with a second such file both under one FAIL line; the same file typed wrong,
 #      mypy walking under exclude_gitignore (the first spec's step 4) passes; with the pattern out
-#      of .gitignore, step 2 names it, and clean but for a type error step 4 does; matched only by
-#      .git/info/exclude or a global excludes file, step 1 passes and step 2 reads it; in a linked
-#      worktree, a module hidden only by .git/info/exclude passes the gate, where that walk names it
+#      of .gitignore, uncommitted, step 2 names it, and clean but for a type error step 4 does; an
+#      untracked .gitignore matching a tracked test fails step 1 naming the test; a force-added
+#      file no step reads passes; matched only by .git/info/exclude or a global excludes file, step
+#      1 passes and step 2 reads it; in a linked worktree, a module hidden only by
+#      .git/info/exclude passes the gate, where that walk names it
 #   q  step 5 refuses what pytest would read that git ignores: an ignored failing test, an ignored
 #      tests/unit/conftest.py that deselects a tracked failing test (pytest given --ignore for it,
-#      the first spec's step 5, passes), an ignored conftest.py at the root, an ignored pytest.toml,
-#      .pytest.toml, pytest.ini or .pytest.ini at the root that deselects one (the gate at 2c98c8a
-#      passes), and an ignored test*.txt under tests/ at any depth, each by name; an ignored .txt
-#      pytest does not collect passes
+#      the first spec's step 5, passes) and an ignored conftest.py at the root, each by name; a
+#      pytest.toml, .pytest.toml, pytest.ini or .pytest.ini at the root cannot deselect a tracked
+#      failing test, pytest told to read pyproject.toml (the gate at 912987a passes); an ignored
+#      test_local.txt passes, pytest reading no .txt
 #   r  a listing git cannot make fails its step by name: a git that refuses the listing call of
-#      step 2, of step 4, and of step 5 in turn, step 1's refusal passing first, each step after it
-#      never reached
+#      step 2 and of step 5 in turn, step 1's refusal passing first, each step after it never
+#      reached
+#   s  the rule set is pyproject.toml's alone: a ruff.toml, .ruff.toml, nested tests/ruff.toml,
+#      mypy.ini or .mypy.ini cannot hide a fault from its step (the gate at 912987a passes); a
+#      uv.toml at the root, untracked, ignored or tracked, fails step 2 by name
 #   u  not run as the gate: --help and a stray argument exit 2 with the usage line, a script that
 #      cannot enter the repository root exits 2 saying so, no step run; the clean copy exits 0
 #   j  the CI replay: the run steps of .github/workflows/gate.yml on a clean copy and a broken one
-# Needs git and uv (steps 2-5 of the gate run through it; j reads the workflow with pyyaml,
-# through uv run --with, installing nothing). Needs ../patchbay-standards beside this repository,
-# as the gate does. g, p and q run the gate from history (git show <sha>:scripts/gate.sh, at
-# 92cd215, 6adf50e or 2c98c8a) to show the bugs it guards against as they were; that part is skipped
+# Needs git and uv (steps 2-5 of the gate run through it; j reads the workflow with pyyaml, through
+# uv run --with, installing nothing). Needs ../patchbay-standards beside this repository, as the
+# gate does. g, p, q and s run the gate from history (git show <sha>:scripts/gate.sh, at 92cd215,
+# 6adf50e, 2c98c8a or 912987a) to show the bugs it guards against as they were; that part is skipped
 # where the commit is absent, and g's upper-case runs (upper_run, after upper says so) on a
-# case-sensitive file system. g and r put a git that refuses one call on PATH (shim), and g a
-# mktemp that makes no directory, in the scratch directory.
+# case-sensitive file system. g and r put a git that refuses one call on PATH (shim), and g a mktemp
+# that makes no directory, in the scratch directory.
 set -uo pipefail
 die() { echo "harness: $1" >&2; exit 2; }   # die <reason>: a setup failure, not a test result
 cd "$(dirname "$0")/.." || die "cannot enter the repository root"
@@ -227,9 +232,34 @@ old_file() {  # old_file <case> <sha> <path>: <path> as of <sha>, in <case>/patc
 }
 broken() { printf '#!/usr/bin/env bash\nif true; then\n' > "$NEG/$1/patchbay/scripts/broken.sh" || die "broken $1"; }   # broken <case>: an unparsable script in the copy
 
+returns_any() {  # returns_any <file>: a module formatted and lint-clean that returns Any where it promises int, which mypy --strict refuses and ruff does not
+  cat > "$1" <<'SRC' || die "returns_any $1"
+"""A function that returns Any where it promises int; mypy --strict refuses it, ruff does not."""
+
+import json
+
+
+def parsed() -> int:
+    """Return whatever json gives, typed as int."""
+    return json.loads("1")
+SRC
+}
+wrong_version() {  # wrong_version <file> <test name>: a test module whose one test states the wrong version and fails
+  cat > "$1" <<SRC || die "wrong_version $1"
+"""A test that states the wrong version."""
+
+import patchbay
+
+
+def $2() -> None:
+    """Fails: the version is not 9.9.9."""
+    assert patchbay.__version__ == "9.9.9"
+SRC
+}
+
 tests=("$@")
-[ "${#tests[@]}" -eq 0 ] && tests=(a b c d e f g h i k l m n o p q r u)
-[ "${tests[*]}" = all ] && tests=(a b c d e f g h i k l m n o p q r u j)
+[ "${#tests[@]}" -eq 0 ] && tests=(a b c d e f g h i k l m n o p q r s u)
+[ "${tests[*]}" = all ] && tests=(a b c d e f g h i k l m n o p q r s u j)
 
 for t in "${tests[@]}"; do case "$t" in
 a) hdr "a (unparsable script scripts/broken.sh: gate.sh must fail at step 1 naming it, exit 1, and never print 2/6)"
@@ -368,29 +398,16 @@ i) hdr "i (src/patchbay/_unused.py formatted but importing os unused: step 2 pas
    run i 1 $'file(s) formatted\nF401 [*] `os` imported but unused\n--> src/patchbay/_unused.py\nFAIL  step 3/6: ruff check found a violation, or could not read its rule set (see above)' scripts/gate.sh ;;
 k) hdr "k (tests/unit/test_broken_types.py returns Any from a function typed -> int: steps 2-3 pass, step 4 must report no-any-return, a check strict turns on, exit 1, and never print 5/6)"
    mk k
-   cat > "$NEG/k/patchbay/tests/unit/test_broken_types.py" <<'SRC' || die "k: write"
-"""A function that returns Any where it promises int; mypy --strict refuses it, ruff does not."""
-
-import json
-
-
-def parsed() -> int:
-    """Return whatever json gives, typed as int."""
-    return json.loads("1")
-SRC
-   run k 1 $'ok   no violation\ntests/unit/test_broken_types.py:8: error: Returning Any from function declared to return "int"  [no-any-return]\nFAIL  step 4/6: mypy found a type error (see above)' scripts/gate.sh ;;
+   returns_any "$NEG/k/patchbay/tests/unit/test_broken_types.py"
+   run k 1 $'ok   no violation\ntests/unit/test_broken_types.py:8: error: Returning Any from function declared to return "int"  [no-any-return]\nFAIL  step 4/6: mypy found a type error (see above)' scripts/gate.sh
+   rm "$NEG/k/patchbay/tests/unit/test_broken_types.py" || die "k: rm test_broken_types"
+   returns_any "$NEG/k/patchbay/outside_probe.py"
+   git -C "$NEG/k/patchbay" add outside_probe.py || die "k: add outside_probe"
+   note "the same module at the root, outside src/ and tests/, formatted and lint-clean: step 4 filters step 2's list to src/ and tests/, so mypy is not given it (must pass, exit 0):"
+   run k 0 scripts/gate.sh ;;
 l) hdr "l (tests/unit/test_broken_assertion.py asserts the version is 9.9.9: steps 2-4 pass, step 5 must report the failure, exit 1, and never print 6/6)"
    mk l
-   cat > "$NEG/l/patchbay/tests/unit/test_broken_assertion.py" <<'SRC' || die "l: write"
-"""A test that states the wrong version."""
-
-import patchbay
-
-
-def test_version_is_something_else() -> None:
-    """Fails: the version is not 9.9.9."""
-    assert patchbay.__version__ == "9.9.9"
-SRC
+   wrong_version "$NEG/l/patchbay/tests/unit/test_broken_assertion.py" test_version_is_something_else
    run l 1 $'ok   no type error\nFAILED tests/unit/test_broken_assertion.py::test_version_is_something_else\nFAIL  step 5/6: a test failed, or pytest could not read its configuration (see above)' scripts/gate.sh ;;
 m) hdr "m (the rule set is pyproject.toml's: a changed line-length is applied and fails the clean tree at step 2; a value ruff cannot parse fails step 2 by name, and a file uv cannot parse fails step 2's sync by name)"
    mk m
@@ -431,6 +448,18 @@ p) hdr "p (the listings read what git lists: an ignored src/patchbay/local_setti
    run p 0 git check-ignore -v src/patchbay/local_settings.py
    note "the gate (must pass, exit 0: git's list does not hold the file, so neither ruff nor mypy is given it):"
    run p 0 scripts/gate.sh
+   printf 'a note\n' > "$NEG/p/patchbay/notes.log" || die "p: write notes.log"
+   git -C "$NEG/p/patchbay" add -f notes.log || die "p: add -f notes.log"
+   note "notes.log force-added under .gitignore's *.log, a file no step reads (must pass, exit 0: the refusal reads only the paths the gate's listings read):"
+   run p 0 git ls-files --cached --ignored --exclude-per-directory=.gitignore
+   run p 0 scripts/gate.sh
+   if old_file p 912987a scripts/gate.sh; then
+     note "the gate at 912987a on the same: its refusal reads the whole tree and fails a file no step reads (finding 7, the bug as it was):"
+     run p 1 "$F1IGN" scripts/gate-912987a.sh
+     named notes.log
+     rm "$NEG/p/patchbay/scripts/gate-912987a.sh" || die "p: rm old gate"
+   fi
+   git -C "$NEG/p/patchbay" rm -q --cached notes.log || die "p: rm --cached notes.log"; rm "$NEG/p/patchbay/notes.log" || die "p: rm notes.log"
    git -C "$NEG/p/patchbay" add -f src/patchbay/local_settings.py || die "p: add -f"
    note "force-added: git lists it as tracked, and the copy's .gitignore still matches it, so a tool that reads .gitignore itself would skip it (must fail at step 1 naming it alone, exit 1, 2/6 never printed):"
    run p 0 git ls-files --cached --ignored --exclude-per-directory=.gitignore
@@ -448,27 +477,24 @@ p) hdr "p (the listings read what git lists: an ignored src/patchbay/local_setti
    named src/patchbay/local_settings.py tests/unit/local_settings.py
    git -C "$NEG/p/patchbay" rm -q --cached tests/unit/local_settings.py || die "p: rm --cached the second file"
    rm "$NEG/p/patchbay/tests/unit/local_settings.py" || die "p: rm the second file"
-   cat > "$NEG/p/patchbay/src/patchbay/local_settings.py" <<'SRC' || die "p: rewrite"
-"""A function that returns Any where it promises int; mypy --strict refuses it, ruff does not."""
-
-import json
-
-
-def parsed() -> int:
-    """Return whatever json gives, typed as int."""
-    return json.loads("1")
-SRC
+   returns_any "$NEG/p/patchbay/src/patchbay/local_settings.py"
    note "mypy walking files = [src, tests] under exclude_gitignore, the first spec's step 4, on the same file typed wrong and still force-added: it skips the tracked file .gitignore matches and passes (finding 3, the bug as it was):"
    run p 0 uv run --locked mypy --exclude-gitignore
    holds 'Success: no issues found in'
    printf 'import os\ndef f(x)->int:\n  return x\n' > "$NEG/p/patchbay/src/patchbay/local_settings.py" || die "p: write again"
    sed -i.bak '/^local_settings\.py$/d' "$NEG/p/patchbay/.gitignore" || die "p: sed .gitignore"; rm "$NEG/p/patchbay/.gitignore.bak" || die "p: rm .bak"
    grep -qx 'local_settings.py' "$NEG/p/patchbay/.gitignore" && die "p: the pattern is still in .gitignore"
-   note "the pattern out of the copy's .gitignore: tracked and matched by nothing, so nothing refuses it and step 2 must name it, exit 1, 3/6 never printed:"
+   note "the pattern out of the copy's .gitignore, uncommitted: step 1 reads the work tree's .gitignore files, so nothing refuses the file and step 2 must name it, exit 1, 3/6 never printed (a clean checkout of the commit, CI's, would still refuse it):"
    run p 0 git status --short src/patchbay/local_settings.py
    run p 1 $'ok   the locked toolchain synced\n--> src/patchbay/local_settings.py\n'"$F2FMT" scripts/gate.sh
+   printf 'test_version.py\n' > "$NEG/p/patchbay/tests/unit/.gitignore" || die "p: write the untracked .gitignore"
+   note "the other direction: an untracked tests/unit/.gitignore matching a tracked test, which no commit ignores (step 1 reads the work tree's .gitignore files, so it must name the test alone, exit 1, 2/6 never printed):"
+   run p 0 git status --short tests/unit/.gitignore
+   run p 1 "$F1IGN" scripts/gate.sh
+   named tests/unit/test_version.py
+   rm "$NEG/p/patchbay/tests/unit/.gitignore" || die "p: rm the untracked .gitignore"
    printf 'src/patchbay/local_settings.py\n' >> "$NEG/p/patchbay/.git/info/exclude" || die "p: info/exclude"
-   note "matched only by .git/info/exclude, the clone's own file: step 1 reads committed .gitignore files alone, so it passes, and step 2 must name the file, exit 1:"
+   note "matched only by .git/info/exclude, the clone's own file: step 1 reads the work tree's .gitignore files alone, so it passes, and step 2 must name the file, exit 1:"
    run p 0 git check-ignore -v --no-index src/patchbay/local_settings.py
    run p 1 $'ok   scripts/sync-standards.sh\n--> src/patchbay/local_settings.py\n'"$F2FMT" scripts/gate.sh
    sed -i.bak '/local_settings/d' "$NEG/p/patchbay/.git/info/exclude" || die "p: sed info/exclude"; rm "$NEG/p/patchbay/.git/info/exclude.bak" || die "p: rm .bak"
@@ -478,16 +504,7 @@ SRC
    note "matched only by a global excludes file (GIT_CONFIG_GLOBAL at a scratch config naming it, the developer's own): step 1 passes, and step 2 must name the file, exit 1:"
    run p 0 env GIT_CONFIG_GLOBAL="$NEG/p-gitconfig" git check-ignore -v --no-index src/patchbay/local_settings.py
    run p 1 $'ok   scripts/sync-standards.sh\n--> src/patchbay/local_settings.py\n'"$F2FMT" env GIT_CONFIG_GLOBAL="$NEG/p-gitconfig" scripts/gate.sh
-   cat > "$NEG/p/patchbay/src/patchbay/local_settings.py" <<'SRC' || die "p: rewrite again"
-"""A function that returns Any where it promises int; mypy --strict refuses it, ruff does not."""
-
-import json
-
-
-def parsed() -> int:
-    """Return whatever json gives, typed as int."""
-    return json.loads("1")
-SRC
+   returns_any "$NEG/p/patchbay/src/patchbay/local_settings.py"
    note "the same file, tracked and matched by nothing, formatted and lint-clean but returning Any where it promises int: steps 2-3 pass, step 4 must name it, exit 1, 5/6 never printed:"
    run p 1 $'ok   no violation\nsrc/patchbay/local_settings.py:8: error: Returning Any from function declared to return "int"  [no-any-return]\nFAIL  step 4/6: mypy found a type error (see above)' scripts/gate.sh
    mk pw
@@ -504,32 +521,14 @@ SRC
    run pwt 1 'src/patchbay/_excluded.py:8: error: Returning Any from function declared to return "int"  [no-any-return]' uv run --locked mypy --exclude-gitignore
    note "the gate in the worktree (must pass, exit 0: git's list does not hold the file):"
    run pwt 0 scripts/gate.sh ;;
-q) hdr "q (step 5 refuses what pytest would read that git ignores: an ignored failing tests/unit/test_local.py; an ignored tests/unit/conftest.py that deselects a tracked failing test, which pytest given --ignore for it, the first spec's step 5, passes; an ignored conftest.py at the root; an ignored pytest.toml, .pytest.toml, pytest.ini or .pytest.ini at the root that deselects a tracked failing test; an ignored test*.txt under tests/ at any depth; each must fail step 5 by name before pytest runs, exit 1, 6/6 never printed; an ignored .txt pytest does not collect passes)"
+q) hdr "q (step 5 refuses what pytest would read that git ignores: an ignored failing tests/unit/test_local.py; an ignored tests/unit/conftest.py that deselects a tracked failing test, which pytest given --ignore for it, the first spec's step 5, passes; an ignored conftest.py at the root; each must fail step 5 by name before pytest runs, exit 1, 6/6 never printed; a pytest.toml, .pytest.toml, pytest.ini or .pytest.ini at the root cannot deselect a tracked failing test, which fails step 5 by pytest's own reason; an ignored test_local.txt passes, pytest reading no .txt)"
    mk q; printf 'tests/unit/test_local.py\n' >> "$NEG/q/patchbay/.gitignore" || die "q: ignore test_local"
-   cat > "$NEG/q/patchbay/tests/unit/test_local.py" <<'SRC' || die "q: write test_local"
-"""A local test that states the wrong version."""
-
-import patchbay
-
-
-def test_local() -> None:
-    """Fails: the version is not 9.9.9."""
-    assert patchbay.__version__ == "9.9.9"
-SRC
+   wrong_version "$NEG/q/patchbay/tests/unit/test_local.py" test_local
    run q 0 git status --short --ignored tests
    note "an ignored failing test (must fail at step 5 naming it, exit 1):"
    run q 1 $'ok   no type error\nFAIL  step 5/6: tests/unit/test_local.py is a .py file git ignores, which pytest would read; remove it, or stop ignoring it' scripts/gate.sh
    rm "$NEG/q/patchbay/tests/unit/test_local.py" || die "q: rm test_local"
-   cat > "$NEG/q/patchbay/tests/unit/test_broken_assertion.py" <<'SRC' || die "q: write broken"
-"""A test that states the wrong version."""
-
-import patchbay
-
-
-def test_version_is_something_else() -> None:
-    """Fails: the version is not 9.9.9."""
-    assert patchbay.__version__ == "9.9.9"
-SRC
+   wrong_version "$NEG/q/patchbay/tests/unit/test_broken_assertion.py" test_version_is_something_else
    git -C "$NEG/q/patchbay" add tests/unit/test_broken_assertion.py || die "q: add broken"
    printf 'tests/unit/conftest.py\n' >> "$NEG/q/patchbay/.gitignore" || die "q: ignore conftest"
    cat > "$NEG/q/patchbay/tests/unit/conftest.py" <<'SRC' || die "q: write conftest"
@@ -557,31 +556,34 @@ SRC
    run q 0 git status --short --ignored conftest.py
    run q 1 $'ok   no type error\nFAIL  step 5/6: conftest.py is a .py file git ignores, which pytest would read; remove it, or stop ignoring it' scripts/gate.sh
    rm "$NEG/q/patchbay/conftest.py" || die "q: rm root conftest"
-   cat > "$NEG/q/patchbay/tests/unit/test_probe_fail.py" <<'SRC' || die "q: write test_probe_fail"
-"""A test that states the wrong version."""
-
-import patchbay
-
-
-def test_probe_fail() -> None:
-    """Fails: the version is not 9.9.9."""
-    assert patchbay.__version__ == "9.9.9"
-SRC
+   wrong_version "$NEG/q/patchbay/tests/unit/test_probe_fail.py" test_probe_fail
    git -C "$NEG/q/patchbay" add tests/unit/test_probe_fail.py || die "q: add test_probe_fail"
+   F5T=$'ok   no type error\nFAILED tests/unit/test_probe_fail.py::test_probe_fail\nFAIL  step 5/6: a test failed, or pytest could not read its configuration (see above)'
    for cfg in pytest.toml .pytest.toml pytest.ini .pytest.ini; do
      case "$cfg" in
        *.toml) printf '[pytest]\naddopts = ["-k", "not probe_fail"]\n' ;;
        *) printf '[pytest]\naddopts = -k "not probe_fail"\n' ;;
      esac > "$NEG/q/patchbay/$cfg" || die "q: write $cfg"
-     printf '/%s\n' "$cfg" >> "$NEG/q/patchbay/.gitignore" || die "q: ignore $cfg"
-     note "an ignored $cfg at the root, whose addopts deselect a tracked failing test (must fail at step 5 naming it before pytest runs, exit 1):"
-     run q 0 git check-ignore -v "$cfg"
-     run q 1 $'ok   no type error\nFAIL  step 5/6: '"$cfg"' is a pytest configuration file git ignores, which pytest would read in place of pyproject.toml; remove it, or stop ignoring it' scripts/gate.sh
-     if [ "$cfg" = pytest.ini ] && old_file q 2c98c8a scripts/gate.sh; then
-       note "the gate at 2c98c8a (main before this spec) on the same: step 5 refuses only .py files, pytest reads the ignored file in place of pyproject.toml, the tracked failing test is deselected, and the gate passes (the bug):"
-       run q 0 scripts/gate-2c98c8a.sh
-       holds '1 deselected'
-       rm "$NEG/q/patchbay/scripts/gate-2c98c8a.sh" || die "q: rm old gate"
+     note "$cfg at the root, untracked and not ignored, whose addopts deselect the tracked failing test: pytest is told to read pyproject.toml, so the test still fails step 5 by pytest's own reason, exit 1:"
+     run q 0 git status --short "$cfg"
+     run q 1 "$F5T" scripts/gate.sh
+     if [ "$cfg" = pytest.ini ]; then
+       printf '/pytest.ini\n' >> "$NEG/q/patchbay/.gitignore" || die "q: ignore pytest.ini"
+       note "the same pytest.ini ignored (must fail the same way, exit 1):"
+       run q 0 git check-ignore -v pytest.ini
+       run q 1 "$F5T" scripts/gate.sh
+       sed -i.bak '/^\/pytest\.ini$/d' "$NEG/q/patchbay/.gitignore" || die "q: sed .gitignore"; rm "$NEG/q/patchbay/.gitignore.bak" || die "q: rm .bak"
+       git -C "$NEG/q/patchbay" add pytest.ini || die "q: add pytest.ini"
+       note "the same pytest.ini staged, as a commit would carry it (must fail the same way, exit 1):"
+       run q 0 git status --short pytest.ini
+       run q 1 "$F5T" scripts/gate.sh
+       if old_file q 912987a scripts/gate.sh; then
+         note "the gate at 912987a on the same: pytest reads the file in place of pyproject.toml, the tracked failing test is deselected, and the gate passes (finding 2, the bug as it was):"
+         run q 0 scripts/gate-912987a.sh
+         holds '1 deselected'
+         rm "$NEG/q/patchbay/scripts/gate-912987a.sh" || die "q: rm old gate"
+       fi
+       git -C "$NEG/q/patchbay" rm -q --cached pytest.ini || die "q: rm --cached pytest.ini"
      fi
      rm "$NEG/q/patchbay/$cfg" || die "q: rm $cfg"
    done
@@ -589,28 +591,62 @@ SRC
    rm "$NEG/q/patchbay/tests/unit/test_probe_fail.py" || die "q: rm test_probe_fail"
    printf 'A doctest that fails.\n\n>>> 1 + 1\n3\n' > "$NEG/q/patchbay/tests/unit/test_local.txt" || die "q: write test_local.txt"
    printf 'tests/unit/test_local.txt\n' >> "$NEG/q/patchbay/.gitignore" || die "q: ignore test_local.txt"
-   note "an ignored tests/unit/test_local.txt holding a failing doctest, which pytest collects by the name (must fail at step 5 naming it before pytest runs, exit 1):"
+   note "an ignored tests/unit/test_local.txt holding a failing doctest, a name the doctest plugin would collect: pytest reads no .txt under -p no:doctest in addopts (must pass, exit 0):"
    run q 0 git check-ignore -v tests/unit/test_local.txt
-   run q 1 $'ok   no type error\nFAIL  step 5/6: tests/unit/test_local.txt is a doctest file git ignores, which pytest would read; remove it, or stop ignoring it' scripts/gate.sh
-   rm "$NEG/q/patchbay/tests/unit/test_local.txt" || die "q: rm test_local.txt"
-   printf 'A doctest that fails.\n\n>>> 1 + 1\n3\n' > "$NEG/q/patchbay/tests/unit/testing/test_deep.txt" || die "q: write test_deep.txt"
-   printf 'tests/unit/testing/test_deep.txt\n' >> "$NEG/q/patchbay/.gitignore" || die "q: ignore test_deep.txt"
-   note "the same deeper, as tests/unit/testing/test_deep.txt (the name is matched at any depth; must fail at step 5 naming it, exit 1):"
-   run q 1 $'ok   no type error\nFAIL  step 5/6: tests/unit/testing/test_deep.txt is a doctest file git ignores, which pytest would read; remove it, or stop ignoring it' scripts/gate.sh
-   rm "$NEG/q/patchbay/tests/unit/testing/test_deep.txt" || die "q: rm test_deep.txt"
-   printf 'A doctest that fails.\n\n>>> 1 + 1\n3\n' > "$NEG/q/patchbay/tests/unit/local.txt" || die "q: write local.txt"
-   printf 'tests/unit/local.txt\n' >> "$NEG/q/patchbay/.gitignore" || die "q: ignore local.txt"
-   note "an ignored tests/unit/local.txt, the same doctest under a name pytest does not collect (must pass, exit 0: only what pytest would read is refused):"
-   run q 0 git check-ignore -v tests/unit/local.txt
    run q 0 scripts/gate.sh ;;
-r) hdr "r (a listing git cannot make fails its step by name: a git on PATH that refuses only the listing call of step 2, then of step 4, then of step 5, each step failing by name, exit 1, the step after it never reached)"
+r) hdr "r (a listing git cannot make fails its step by name: a git on PATH that refuses only the listing call of step 2, then of step 5, each step failing by name, exit 1, the step after it never reached)"
    mk r; shim
-   note "the listing of step 2 (git ls-files ... --exclude-standard -- .) refused, step 1's refusal of the same path passing first:"
-   run r 1 $'git (test shim): refusing\nFAIL  step 2/6: git could not list the files of the tree (see above)' env PATH="$NEG/shim:$PATH" GATE_TEST_REFUSE=' --exclude-standard -- . ' scripts/gate.sh
-   note "the listing of step 4 (git ls-files ... -- src tests) refused:"
-   run r 1 $'ok   no violation\ngit (test shim): refusing\nFAIL  step 4/6: git could not list the files under src/ and tests/ (see above)' env PATH="$NEG/shim:$PATH" GATE_TEST_REFUSE=' -- src tests ' scripts/gate.sh
+   note "the listing of step 2 (git ls-files ... --exclude-standard -- *.py *.pyi) refused, step 1's refusal of the same paths passing first:"
+   run r 1 $'git (test shim): refusing\nFAIL  step 2/6: git could not list the .py and .pyi files of the tree (see above)' env PATH="$NEG/shim:$PATH" GATE_TEST_REFUSE=' --exclude-standard -- *.py *.pyi ' scripts/gate.sh
    note "the listing of step 5 (git ls-files --others --ignored ...) refused, step 1's --cached --ignored passing first:"
-   run r 1 $'ok   no type error\ngit (test shim): refusing\nFAIL  step 5/6: git could not list what it ignores under tests/ (see above)' env PATH="$NEG/shim:$PATH" GATE_TEST_REFUSE=' --others --ignored ' scripts/gate.sh ;;
+   run r 1 $'ok   no type error\ngit (test shim): refusing\nFAIL  step 5/6: git could not list what it ignores under tests/ and at the root conftest.py (see above)' env PATH="$NEG/shim:$PATH" GATE_TEST_REFUSE=' --others --ignored ' scripts/gate.sh ;;
+s) hdr "s (the rule set is pyproject.toml's alone: a ruff.toml, .ruff.toml or nested tests/ruff.toml cannot hide a fault from steps 2 and 3, a mypy.ini or .mypy.ini cannot from step 4, each failing its step by name, exit 1, the next step never reached; a uv.toml at the root, untracked, ignored or tracked, fails step 2 by name before uv runs)"
+   mk s
+   HIDE=$'line-length = 100\nforce-exclude = true\nextend-exclude = ["**/test_s_probe.py"]\n\n[lint]\nselect = ["E9"]\n'
+   for cfg in ruff.toml .ruff.toml tests/ruff.toml; do
+     printf '%s' "$HIDE" > "$NEG/s/patchbay/$cfg" || die "s: write $cfg"
+     printf '%s\n' "$cfg" >> "$NEG/s/patchbay/.git/info/exclude" || die "s: exclude $cfg"
+     printf '"""A module the formatter would rewrite."""\n\nx  =  1\n' > "$NEG/s/patchbay/tests/unit/test_s_probe.py" || die "s: write the misformatted module"
+     git -C "$NEG/s/patchbay" add tests/unit/test_s_probe.py || die "s: add the probe"
+     note "$cfg, hidden by .git/info/exclude, excluding a tracked misformatted test module (step 2 must still name it, exit 1):"
+     run s 0 git check-ignore -v "$cfg"
+     run s 1 $'--> tests/unit/test_s_probe.py\n'"$F2FMT" scripts/gate.sh
+     printf '"""A module with an import nothing uses."""\n\nimport os\n' > "$NEG/s/patchbay/tests/unit/test_s_probe.py" || die "s: write the unused import"
+     note "the same $cfg, and the module formatted but importing os unused (step 3 must still name it, exit 1):"
+     run s 1 $'file(s) formatted\nF401 [*] `os` imported but unused\n--> tests/unit/test_s_probe.py\nFAIL  step 3/6: ruff check found a violation, or could not read its rule set (see above)' scripts/gate.sh
+     if [ "$cfg" = ruff.toml ] && old_file s 912987a scripts/gate.sh; then
+       note "the gate at 912987a on the same: ruff reads the hidden file, the fault is excluded, and the gate passes (finding 1, the bug as it was):"
+       run s 0 scripts/gate-912987a.sh
+       rm "$NEG/s/patchbay/scripts/gate-912987a.sh" || die "s: rm old gate"
+     fi
+     git -C "$NEG/s/patchbay" rm -q -f --cached tests/unit/test_s_probe.py || die "s: rm --cached the probe"
+     rm "$NEG/s/patchbay/tests/unit/test_s_probe.py" "$NEG/s/patchbay/$cfg" || die "s: rm the probe and $cfg"
+   done
+   for cfg in mypy.ini .mypy.ini; do
+     printf '[mypy]\nignore_errors = True\n' > "$NEG/s/patchbay/$cfg" || die "s: write $cfg"
+     printf '%s\n' "$cfg" >> "$NEG/s/patchbay/.git/info/exclude" || die "s: exclude $cfg"
+     returns_any "$NEG/s/patchbay/tests/unit/test_s_probe.py"
+     git -C "$NEG/s/patchbay" add tests/unit/test_s_probe.py || die "s: add the typed probe"
+     note "$cfg, hidden by .git/info/exclude, turning every error off (step 4 must still name the module, exit 1):"
+     run s 0 git check-ignore -v "$cfg"
+     run s 1 $'ok   no violation\ntests/unit/test_s_probe.py:8: error: Returning Any from function declared to return "int"  [no-any-return]\nFAIL  step 4/6: mypy found a type error (see above)' scripts/gate.sh
+     git -C "$NEG/s/patchbay" rm -q --cached tests/unit/test_s_probe.py || die "s: rm --cached the typed probe"
+     rm "$NEG/s/patchbay/tests/unit/test_s_probe.py" "$NEG/s/patchbay/$cfg" || die "s: rm the typed probe and $cfg"
+   done
+   F2UV="FAIL  step 2/6: uv.toml is at the root, where uv reads it ahead of [tool.uv] in pyproject.toml; remove it, uv is configured in pyproject.toml alone"
+   printf 'required-version = ">=0.13.7"\n' > "$NEG/s/patchbay/uv.toml" || die "s: write uv.toml"
+   note "uv.toml at the root, untracked and not ignored (must fail at step 2 by name, exit 1, the locked toolchain never synced):"
+   run s 0 git status --short uv.toml
+   run s 1 "$F2UV" scripts/gate.sh
+   printf 'uv.toml\n' >> "$NEG/s/patchbay/.git/info/exclude" || die "s: exclude uv.toml"
+   note "the same uv.toml hidden by .git/info/exclude (must fail the same way, exit 1):"
+   run s 0 git check-ignore -v uv.toml
+   run s 1 "$F2UV" scripts/gate.sh
+   sed -i.bak '/^uv\.toml$/d' "$NEG/s/patchbay/.git/info/exclude" || die "s: sed exclude"; rm "$NEG/s/patchbay/.git/info/exclude.bak" || die "s: rm .bak"
+   git -C "$NEG/s/patchbay" add uv.toml || die "s: add uv.toml"
+   note "the same uv.toml staged (must fail the same way, exit 1):"
+   run s 0 git status --short uv.toml
+   run s 1 "$F2UV" scripts/gate.sh ;;
 u) hdr "u (not run as the gate: --help and a stray argument each exit 2 with the usage line and run no step; a script that cannot enter the repository root exits 2 saying so; the clean copy exits 0)"
    mk u
    note "clean copy (must pass, exit 0):"

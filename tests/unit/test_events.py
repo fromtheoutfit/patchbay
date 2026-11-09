@@ -3,8 +3,9 @@
 import gc
 import json
 import weakref
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta, timezone, tzinfo
-from typing import override
+from typing import cast, override
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -89,12 +90,15 @@ def test_an_event_is_stamped_in_utc_when_built() -> None:
 _LONDON = ZoneInfo("Europe/London")
 
 
-class _ZeroForNone(tzinfo):
-    """Zero for no particular instant, and an hour east of UTC at every real one."""
+class _Answers(tzinfo):
+    """A zone whose offset is whatever the test hands it."""
+
+    def __init__(self, offset: Callable[[datetime | None], timedelta | None]) -> None:
+        self._offset = offset
 
     @override
-    def utcoffset(self, dt: datetime | None) -> timedelta:
-        return timedelta(0) if dt is None else timedelta(hours=1)
+    def utcoffset(self, dt: datetime | None) -> timedelta | None:
+        return self._offset(dt)
 
     @override
     def dst(self, dt: datetime | None) -> None:
@@ -102,7 +106,18 @@ class _ZeroForNone(tzinfo):
 
     @override
     def tzname(self, dt: datetime | None) -> str:
-        return "zero for none"
+        return "answers"
+
+
+def _zero_for_none_then(at_an_instant: timedelta | None) -> _Answers:
+    return _Answers(lambda dt: timedelta(0) if dt is None else at_an_instant)
+
+
+def _raises_at_an_instant(dt: datetime | None) -> timedelta:
+    if dt is None:
+        return timedelta(0)
+    msg = "no offset at this instant"
+    raise RuntimeError(msg)
 
 
 @pytest.mark.parametrize(
@@ -112,7 +127,12 @@ class _ZeroForNone(tzinfo):
         datetime(2026, 11, 7, 8, 0, tzinfo=timezone(timedelta(hours=1))),
         datetime(2026, 1, 15, 12, 0, tzinfo=_LONDON),
         datetime(2026, 7, 15, 12, 0, tzinfo=_LONDON),
-        datetime(2026, 7, 15, 12, 0, tzinfo=_ZeroForNone()),
+        datetime(2026, 7, 15, 12, 0, tzinfo=_zero_for_none_then(timedelta(hours=1))),
+        datetime(2026, 7, 15, 12, 0, tzinfo=_zero_for_none_then(None)),
+        # type() so mypy does not refuse an abstract class: a bare tzinfo is the case under test.
+        datetime(2026, 7, 15, 12, 0, tzinfo=type("_Bare", (tzinfo,), {})()),
+        datetime(2026, 7, 15, 12, 0, tzinfo=_Answers(_raises_at_an_instant)),
+        datetime(2026, 7, 15, 12, 0, tzinfo=_Answers(lambda _: cast("timedelta", 0))),
     ],
     ids=[
         "naive",
@@ -120,17 +140,40 @@ class _ZeroForNone(tzinfo):
         "London in January",
         "London in July",
         "zero for no instant, an hour east at this one",
+        "zero for no instant, None at this one",
+        "a bare tzinfo",
+        "a zone raising at this instant",
+        "a zone answering an int",
     ],
 )
 def test_an_event_s_time_is_refused_unless_utc(at: datetime) -> None:
     """A naive time, or a zone other than UTC, is refused rather than guessed at or converted.
 
-    The zone's answer for no instant and its offset at this one must both be zero. London is at
-    offset zero in January and is refused then as in July, so whether an event is valid never
-    depends on the season it was built in.
+    The zone's answer for no instant and its offset at this one must both be zero, and a zone that
+    cannot say is refused as well. London answers None for no instant, so it is refused in January,
+    at offset zero, as in July: a zone whose offset moves never passes, in any season.
     """
     with pytest.raises(PatchbayValidationError, match="in UTC"):
         Event(name="thing.happened", at=at, source="fake", correlation_id="c1")
+
+
+def test_a_zone_claiming_zero_is_taken_at_its_word_for_the_time_given() -> None:
+    """A tzinfo answering zero for no instant is judged only at the time given: no more can be."""
+    zone = _Answers(lambda dt: timedelta(0) if dt is None or dt.month == 1 else timedelta(hours=1))
+    january = Event(
+        name="thing.happened",
+        at=datetime(2026, 1, 15, 12, 0, tzinfo=zone),
+        source="fake",
+        correlation_id="c1",
+    )
+    assert january.at.tzinfo is UTC
+    with pytest.raises(PatchbayValidationError, match="in UTC"):
+        Event(
+            name="thing.happened",
+            at=datetime(2026, 7, 15, 12, 0, tzinfo=zone),
+            source="fake",
+            correlation_id="c1",
+        )
 
 
 @pytest.mark.parametrize(
@@ -139,7 +182,7 @@ def test_an_event_s_time_is_refused_unless_utc(at: datetime) -> None:
     ids=["datetime.UTC", "a zero offset named Z", "ZoneInfo UTC"],
 )
 def test_a_time_in_utc_is_held_as_datetime_utc(zone: timezone | ZoneInfo) -> None:
-    """Any zone at offset zero all year is UTC, and the event holds the time in UTC itself."""
+    """A zone answering zero for no instant and at this time is UTC, and is held as UTC itself."""
     at = datetime(2026, 7, 15, 12, 0, tzinfo=zone)
     event = Event(name="thing.happened", at=at, source="fake", correlation_id="c1")
     assert event.at == at

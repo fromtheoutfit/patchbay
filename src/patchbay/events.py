@@ -66,17 +66,27 @@ class Event(PatchbayModel, frozen=True):
         # Both answers must be zero. utcoffset(None) is a fixed zone's one offset, and None for a
         # zone whose offset moves, so London is refused in every season (the PR 11 revision's
         # verification/probes.txt, footing.py C); at.utcoffset() is the zone's offset at this
-        # time, which a zone answering zero for no instant need not share (issue #13).
+        # time, which a zone answering zero for no instant need not share (issue #13). Such a zone
+        # is taken at its word for this time alone. A tzinfo is a caller's code and can raise
+        # anything, so all of it is asked inside the try, and pydantic is handed a ValueError.
         zone = at.tzinfo
         if zone is None:
             msg = f"an event's time is in UTC, given a naive time {at.isoformat()}"
             raise ValueError(msg)
-        if zone.utcoffset(None) != timedelta(0) or at.utcoffset() != timedelta(0):
+        try:
+            in_utc = zone.utcoffset(None) == timedelta(0) and at.utcoffset() == timedelta(0)
+            held = at.astimezone(UTC) if in_utc else None
+            given = f"{at.isoformat()} ({zone})"
+        except Exception as error:
             msg = (
-                f"an event's time is in UTC, offset zero all year, given {at.isoformat()} ({zone})"
+                "an event's time is in UTC, given a zone that cannot say its offset "
+                f"({type(zone).__name__})"
             )
+            raise ValueError(msg) from error
+        if held is None:
+            msg = f"an event's time is in UTC, offset zero, given {given}"
             raise ValueError(msg)
-        return at.astimezone(UTC)
+        return held
 
 
 class ParameterChanged(Event, frozen=True):

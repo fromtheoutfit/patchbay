@@ -1,6 +1,6 @@
 # The one configuration file of this repository: every tool is configured under [tool.*] here and
-# nowhere else (no setup.py, setup.cfg, requirements*.txt, tox.ini, .flake8, mypy.ini, pytest.ini
-# or .ruff.toml). .pre-commit-config.yaml beside it registers hooks and configures no tool.
+# nowhere else (no setup.py, setup.cfg, requirements*.txt, tox.ini, .flake8, mypy.ini, pytest.ini,
+# .ruff.toml or uv.toml). .pre-commit-config.yaml beside it registers hooks and configures no tool.
 #
 # Two kinds of entry. The gate's: the [tool.*] sections, and the pins in [dependency-groups] dev of
 # the tools the gate runs (ruff, mypy and pytest) with what uv.lock resolves for them. [tool.uv]
@@ -132,7 +132,9 @@ testpaths = ["tests"]
 # typo, so it fails. --strict-config: a key pytest does not know in this section fails the run
 # rather than being ignored with a warning (agent-os/standards/base/python/toolchain.md, "pytest
 # and hypothesis"; probed with pytest 9.2.0: exit 4 with the flag, a warning and exit 0 without).
-addopts = "-q --strict-markers --strict-config"
+# -p no:doctest: the plugin collects test*.txt under tests/, which git may ignore, and no test here
+# is a doctest, so pytest reads no .txt (the revision after the review of PR 15, probes.txt).
+addopts = "-q --strict-markers --strict-config -p no:doctest"
 markers = [
     "integration: needs a running instrument; not selected by the gate until a spec says so",
 ]
