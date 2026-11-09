@@ -113,15 +113,21 @@ in `shape.md`:
 - **`base/python/toolchain`** — one tool per job in a uv Python package, `pyproject.toml` the only
   config file, every tool run through `uv run --locked`, and the order of the gate's tool steps
   (`agent-os/standards/base/python/toolchain.md`, "In a consuming project").
-
-The layout and typing standards are not written yet; each joins this list after the sync that
-brings it in.
+- **`base/python/layout`** — one module per concern, the `testing` subpackage, what `__init__.py`
+  holds, and the one direction the modules import in.
+- **`base/python/typing`** — `NewType` keys, protocols, PEP 695 generics, re-exports through
+  `__all__`, and no future import where pydantic reads annotations.
+- **`base/python/models`** — one frozen, closed, finite, strict base, refusing as the package,
+  read-only inside, and computing alike.
+- **`base/python/errors`** — one root, fields as arguments and attributes, no built-in escaping a
+  public method, and the errors module the leaf the others import.
 
 #### Step 5b: Feature-Specific Standards
 
 Read `agent-os/standards/index.yml` to identify standards relevant to the feature being built
 (in addition to the core tier above, which is included already: leave the Step 5a standards out
-of the list, `python/toolchain` among them). Its `base:` section is synced and never
+of the list, `python/toolchain`, `python/layout`, `python/typing`, `python/models` and
+`python/errors`). Its `base:` section is synced and never
 edited by hand; a key there is a path relative to `base/` without the `.md`, so
 `process/verification-gate` is `agent-os/standards/base/process/verification-gate.md`. The
 repository's own sections sit beside it and resolve to `agent-os/standards/<section>/<key>.md`,
@@ -131,7 +137,8 @@ standard directly under the standards folder, in no section folder.
 Use AskUserQuestion to confirm:
 
 ```
-The core architecture tier (Step 5a) holds base/python/toolchain, included without asking.
+The core architecture tier (Step 5a) holds base/python/toolchain, base/python/layout,
+base/python/typing, base/python/models and base/python/errors, included without asking.
 
 These standards may apply:
 
@@ -199,8 +206,9 @@ Create `agent-os/specs/{folder-name}/` with:
 Run the full verification gate, in order. The spec is not complete until every step passes:
 
 1. `bash -n` on every shell script under `scripts/` as git lists them (tracked or untracked,
-   not ignored), at a work-tree top that is the repository root — every one must parse; any
-   other file there fails the step by name
+   not ignored), at a work-tree top that is the repository root, as git says, with no tracked
+   file a `.gitignore` ignores — every script must parse; any other file there fails the step
+   by name
 2. `uv sync --locked`, then `uv run --locked ruff format --check` over the `.py` and `.pyi`
    files git lists — the locked toolchain syncs, and every file is formatted as ruff format
    writes it
@@ -209,12 +217,14 @@ Run the full verification gate, in order. The spec is not complete until every s
 4. `uv run --locked mypy` over the `.py` and `.pyi` files git lists under `src/` and `tests/` —
    no type error under `[tool.mypy]` (strict)
 5. `uv run --locked pytest` — every test under `tests/` passes (`[tool.pytest.ini_options]`),
-   once no `.py` file under `tests/`, and no `conftest.py` at the root, is one git ignores
+   once no `.py` or `test*.txt` file under `tests/`, and no `conftest.py` at the root or root file
+   pytest reads ahead of `pyproject.toml` (`pytest.toml`, `.pytest.toml`, `pytest.ini`,
+   `.pytest.ini`), is one git ignores
    — steps 2–5 run the tools pinned in `pyproject.toml`'s `[dependency-groups] dev` as `uv.lock`
    resolves them, under the uv `[tool.uv] required-version` pins; step 2's sync fails, before
    any tool runs, when the lockfile no longer matches `pyproject.toml` or the running uv is not
    the required one; ruff and mypy are given git's list itself, and pytest walks `tests/` only
-   once nothing there that it would read is ignored
+   once nothing it would read is ignored
 6. `scripts/sync-standards.sh --check` — `agent-os/standards/base/`, the `base:` section of
    `agent-os/standards/index.yml` and the script itself are byte-identical to `patchbay-standards`
    at the commit in `agent-os/standards/base/.version`, read from the sibling checkout
@@ -311,7 +321,8 @@ The shape.md file should capture:
 
 ## Core Architecture (Non-Negotiable)
 
-- `base/python/toolchain` — included without asking (Step 5a); its full text in `standards.md`.
+- `base/python/toolchain`, `base/python/layout`, `base/python/typing`, `base/python/models` and
+  `base/python/errors` — included without asking (Step 5a); their full text in `standards.md`.
 
 ## Scope
 
@@ -331,7 +342,8 @@ The shape.md file should capture:
 ## Standards Applied
 
 **Core (always applied):**
-- `base/python/toolchain` — Step 5a
+- `base/python/toolchain`, `base/python/layout`, `base/python/typing`, `base/python/models`,
+  `base/python/errors` — Step 5a
 
 **Feature-specific:**
 - {folder/standard} — [why it applies]
@@ -339,7 +351,8 @@ The shape.md file should capture:
 ## Verification Gate
 
 Spec is not complete until `scripts/gate.sh` passes — `bash -n` on every shell script
-under `scripts/` as git lists them; `uv sync --locked`, then
+under `scripts/` as git lists them, with no tracked file a `.gitignore` ignores;
+`uv sync --locked`, then
 `uv run --locked ruff format --check .`, `uv run --locked ruff check .`, `uv run --locked mypy`
 and `uv run --locked pytest` under `pyproject.toml`'s `[tool.*]` rule set and `uv.lock`'s pins;
 and `scripts/sync-standards.sh --check` against `../patchbay-standards` at the commit in

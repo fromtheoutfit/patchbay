@@ -3,7 +3,8 @@
 import gc
 import json
 import weakref
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone, tzinfo
+from typing import override
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -88,6 +89,22 @@ def test_an_event_is_stamped_in_utc_when_built() -> None:
 _LONDON = ZoneInfo("Europe/London")
 
 
+class _ZeroForNone(tzinfo):
+    """Zero for no particular instant, and an hour east of UTC at every real one."""
+
+    @override
+    def utcoffset(self, dt: datetime | None) -> timedelta:
+        return timedelta(0) if dt is None else timedelta(hours=1)
+
+    @override
+    def dst(self, dt: datetime | None) -> None:
+        return None
+
+    @override
+    def tzname(self, dt: datetime | None) -> str:
+        return "zero for none"
+
+
 @pytest.mark.parametrize(
     "at",
     [
@@ -95,14 +112,22 @@ _LONDON = ZoneInfo("Europe/London")
         datetime(2026, 11, 7, 8, 0, tzinfo=timezone(timedelta(hours=1))),
         datetime(2026, 1, 15, 12, 0, tzinfo=_LONDON),
         datetime(2026, 7, 15, 12, 0, tzinfo=_LONDON),
+        datetime(2026, 7, 15, 12, 0, tzinfo=_ZeroForNone()),
     ],
-    ids=["naive", "an hour east of UTC", "London in January", "London in July"],
+    ids=[
+        "naive",
+        "an hour east of UTC",
+        "London in January",
+        "London in July",
+        "zero for no instant, an hour east at this one",
+    ],
 )
 def test_an_event_s_time_is_refused_unless_utc(at: datetime) -> None:
     """A naive time, or a zone other than UTC, is refused rather than guessed at or converted.
 
-    The zone is judged, not the instant: London is at offset zero in January, and is refused then
-    as in July, so whether an event is valid never depends on the season it was built in.
+    The zone's answer for no instant and its offset at this one must both be zero. London is at
+    offset zero in January and is refused then as in July, so whether an event is valid never
+    depends on the season it was built in.
     """
     with pytest.raises(PatchbayValidationError, match="in UTC"):
         Event(name="thing.happened", at=at, source="fake", correlation_id="c1")

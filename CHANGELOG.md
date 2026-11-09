@@ -5,11 +5,49 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 The base standards under `agent-os/standards/base/` are pinned to the commit in `base/.version`;
-a sync forward is recorded here as its own entry, written by the spec that follows it, since the
-sync's own commit changes nothing but the synced files
+a sync forward is recorded here by the sync's own commit, one entry naming the old commit and the
+new as the sync's report gives them. The script writes no `CHANGELOG.md`: the person who syncs
+writes the entry, in that commit
 (`agent-os/standards/base/process/standards-sync.md`, "Pinned, not tracking").
 
 ## [Unreleased]
+
+### Changed
+
+- sync base standards: 11ceffdbd088bfb753dc54efa198dcb1ad6af0c9 ->
+  e31f7dbfb474752339a43fe08a37ab26c7956f5c. Written by the spec after it
+  (`agent-os/specs/2026-11-09-0802-gate-after-sync-and-event-utc-offset/`), since the sync's commit
+  `4b1b3e2` (PR #14) merged without its entry.
+
+- Ninth spec, `agent-os/specs/2026-11-09-0802-gate-after-sync-and-event-utc-offset/` (issues #12
+  and #13): the gate's spec after the sync to `e31f7db`, and `Event.at`'s offset. Every departure
+  from the issues' text is a Decision in the spec's `shape.md`. The version stays 0.0.1.
+  - `scripts/gate.sh` takes the skeleton it shares with `patchbay-standards` at `e31f7db`: the root
+    guard asks git `--is-inside-work-tree` as well as `--show-cdup`, so a copy under another
+    repository's `.git/` or in a bare repository is refused by name; each listing goes to a file in
+    a temporary directory with git's status checked, the empty record, the `ok=` flags and the
+    dependence on `pipefail` gone; step 1 refuses every tracked file a committed `.gitignore`
+    matches, naming each under one FAIL line. `verification/gate-sh-diff.txt` shows the two scripts
+    differing only in step lists, pins, paths and the refusal's pathspec.
+  - Step 5 refuses, before pytest walks, an ignored root `pytest.toml`, `.pytest.toml`, `pytest.ini`
+    or `.pytest.ini`, each read in place of `pyproject.toml` (one holding `addopts` deselected a
+    tracked failing test and the gate passed), and an ignored `test*.txt` under `tests/`, which
+    pytest collects as a doctest (`verification/probes.txt`).
+  - `scripts/gate-negative-tests.sh`: p's force-added file moves to step 1, and p shows the
+    machine's own excludes do not count; g gains the refusal's listing, a git that refuses the
+    listing of `scripts/`, a `mktemp` that makes nothing, a copy under `.git/` and one in a bare
+    repository, and its upper-case run now passes step 6; q gains each configuration file and the
+    doctest; r's shims are narrowed past step 1's refusal; `named` holds the entries under a FAIL
+    line; `shim`, `upper` and `upper_run` are the sibling's. p's file count and q's scratch conftest,
+    stale since the contracts spec, no longer rest on what the tree holds or on a name it now uses.
+    98 runs, 0 unexpected; `verification/guard-mutations.txt`: each guard's mutation caught.
+  - `.claude/commands/agent-os/shape-spec.md`: Step 5a lists `base/python/layout`, `typing`, `models`
+    and `errors` beside `toolchain`; the gate task and its template, like `CLAUDE.md` and
+    `README.md`, name step 1's refusal and step 5's new scope.
+  - `src/patchbay/events.py`: `Event.at` also refuses a time whose offset at its own instant is not
+    zero, so a `tzinfo` answering zero for no instant and +01:00 at a real one is refused
+    (issue #13); `tests/unit/test_events.py` holds it.
+  - `agent-os/product/tech-stack.md` cites `base/python/models.md` beside its pydantic line.
 
 ### Added
 
