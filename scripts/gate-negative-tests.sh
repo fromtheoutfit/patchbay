@@ -26,9 +26,14 @@
 # (or through check, as j's replay does), and times holds one whole line to an exact count. The
 # text says nothing of what else was printed, so a case that says step 6 names one drift alone
 # follows its run with only, which holds the lines of step 6's drift report to exactly those it
-# names. A mismatch of any of these is marked UNEXPECTED and the
-# harness exits 1 at the end naming the count, so the transcript's last line says whether every
-# case behaved. Every setup step (a command that builds a case's state) stops the harness by name
+# names, and a case that says step 1 refuses named files follows its run with named, which holds
+# the entries under its FAIL line to exactly those. A mismatch of any of these is marked UNEXPECTED
+# and the harness exits 1 at the end naming the count, so the transcript's last line says whether
+# every case behaved. A change to these assertions is shown to discriminate by a mutation, the
+# guard it covers deleted in a copy and the case coming back UNEXPECTED, recorded in the spec's
+# verification/ beside the run. The tests are rerun whenever the gate's files change, and whenever
+# a spec adds, removes or renames a file under a directory mk copies, since a case can rest on
+# what that directory holds. Every setup step (a command that builds a case's state) stops the harness by name
 # when it fails (exit 2) rather than letting a case fail for the wrong reason. Nothing in the tree
 # and nothing in ../patchbay-standards is written: the scratch directory is refused unless mktemp
 # made it, outside this repository, and only then is the trap that removes it set. The transcript
@@ -45,11 +50,13 @@
 #   e  the copy's scripts/sync-standards.sh edited: step 6 reports the script alone
 #   f  an untracked .md under agent-os/standards/base/: step 6 names it extra alone
 #   g  step 1's file list: an ignored scripts/.DS_Store passes; the copy entered through its path in
-#      upper case passes step 1 (case-insensitive file systems only); a script in a three-way
-#      merge conflict is listed once; a tracked non-shell file, a tracked script missing from the
-#      disk, a tracked symlink to nothing, a corrupt index, a copy that is not a git work tree and
-#      the same copy inside another repository's work tree each fail by name; the gate at 92cd215
-#      or 6adf50e is shown where it had the bug, as it was
+#      upper case passes the gate (case-insensitive file systems only); a script in a three-way
+#      merge conflict is listed once; a corrupt index, a git that refuses step 1's listing of
+#      scripts/, a mktemp that makes no directory, a tracked non-shell file, a tracked script
+#      missing from the disk, a tracked symlink to nothing, a copy that is not a git work tree, the
+#      same copy inside another repository's work tree, under another repository's .git/ and in a bare
+#      repository each fail by name; the gate at 92cd215, 6adf50e or 2c98c8a is shown where it had
+#      the bug, as it was
 #   h  a misformatted module under src/patchbay/: step 2 names it, exit 1, step 3 never reached
 #   i  a formatted module with an unused import: step 2 passes, step 3 reports F401, exit 1
 #   k  a function returning Any where it promises int: steps 2-3 pass, step 4 reports it under
@@ -62,25 +69,32 @@
 #      naming the stale lockfile, with the sync's reason; ruff never runs, exit 1
 #   o  [tool.uv] required-version set to a uv that is not running: step 2's uv sync fails, uv
 #      naming the required and the running version, with the sync's reason, exit 1
-#   p  steps 2-4 read git's list: an ignored src/patchbay/local_settings.py with format, lint and
-#      type faults passes the gate; force-added while .gitignore still matches it, git lists it and
-#      step 2 names it; clean but for a type error, step 4 names it, where mypy walking under
-#      exclude_gitignore (the first spec's step 4) passes; in a linked worktree, a module hidden
-#      only by .git/info/exclude passes the gate, where that walk names it
+#   p  the listings read what git lists: an ignored src/patchbay/local_settings.py with format, lint
+#      and type faults passes the gate; force-added while .gitignore still matches it, step 1 names
+#      it alone, and with a second such file both under one FAIL line; the same file typed wrong,
+#      mypy walking under exclude_gitignore (the first spec's step 4) passes; with the pattern out
+#      of .gitignore, step 2 names it, and clean but for a type error step 4 does; matched only by
+#      .git/info/exclude or a global excludes file, step 1 passes and step 2 reads it; in a linked
+#      worktree, a module hidden only by .git/info/exclude passes the gate, where that walk names it
 #   q  step 5 refuses what pytest would read that git ignores: an ignored failing test, an ignored
 #      tests/unit/conftest.py that deselects a tracked failing test (pytest given --ignore for it,
-#      the first spec's step 5, passes), and an ignored conftest.py at the root, each by name
+#      the first spec's step 5, passes), an ignored conftest.py at the root, an ignored pytest.toml,
+#      .pytest.toml, pytest.ini or .pytest.ini at the root that deselects one (the gate at 2c98c8a
+#      passes), and an ignored test*.txt under tests/ at any depth, each by name; an ignored .txt
+#      pytest does not collect passes
 #   r  a listing git cannot make fails its step by name: a git that refuses the listing call of
-#      step 2, of step 4, and of step 5 in turn, each step after it never reached
+#      step 2, of step 4, and of step 5 in turn, step 1's refusal passing first, each step after it
+#      never reached
 #   u  not run as the gate: --help and a stray argument exit 2 with the usage line, a script that
 #      cannot enter the repository root exits 2 saying so, no step run; the clean copy exits 0
 #   j  the CI replay: the run steps of .github/workflows/gate.yml on a clean copy and a broken one
 # Needs git and uv (steps 2-5 of the gate run through it; j reads the workflow with pyyaml,
 # through uv run --with, installing nothing). Needs ../patchbay-standards beside this repository,
-# as the gate does. g runs the gate from history (git show <sha>:scripts/gate.sh, at 92cd215 or
-# 6adf50e) to show the bugs it guards against as they were; that part is skipped where the commit
-# is absent, and g's upper-case run on a case-sensitive file system. r puts a git that refuses one
-# call on PATH, in the scratch directory.
+# as the gate does. g, p and q run the gate from history (git show <sha>:scripts/gate.sh, at
+# 92cd215, 6adf50e or 2c98c8a) to show the bugs it guards against as they were; that part is skipped
+# where the commit is absent, and g's upper-case runs (upper_run, after upper says so) on a
+# case-sensitive file system. g and r put a git that refuses one call on PATH (shim), and g a
+# mktemp that makes no directory, in the scratch directory.
 set -uo pipefail
 die() { echo "harness: $1" >&2; exit 2; }   # die <reason>: a setup failure, not a test result
 cd "$(dirname "$0")/.." || die "cannot enter the repository root"
@@ -98,6 +112,7 @@ NEGUP=$(printf '%s' "$NEG" | tr '[:lower:]' '[:upper:]')   # the scratch path ty
 git clone -q "$SIBLING" "$NEG/patchbay-standards" || die "could not clone $SIBLING into the scratch directory"
 
 # The gate's own failure lines, named by the cases that end on them.
+F1IGN="FAIL  step 1/6: tracked, but a .gitignore ignores them; stop ignoring each (a ! pattern, and for a file under an ignored directory, ignore dir/* rather than dir/ first) or stop tracking it (git rm --cached):"
 F2SYNC="FAIL  step 2/6: uv could not sync the locked toolchain: uv.lock does not match pyproject.toml, uv could not read them or build the package, or this uv is not the version [tool.uv] requires (see above)"
 F2FMT="FAIL  step 2/6: a file is not formatted as ruff format would write it, or ruff could not read its settings (see above)"
 F6="FAIL  step 6/6: drift from patchbay-standards at the pinned commit, or the sibling checkout ../patchbay-standards unusable (see above)"
@@ -150,6 +165,16 @@ only() {  # only <line>...: after run, the lines step 6's drift check printed un
     echo "only=$(printf '%s; ' "$@") UNEXPECTED (listed: $(printf '%s\n' "$got" | sed 's/^ *//' | paste -sd ';' -))"; unexpected=$((unexpected + 1))
   fi
 }
+named() {  # named <path>...: after run, the paths listed under its FAIL line (fail_list's form, each indented eight spaces) are exactly these, in order; a mismatch is UNEXPECTED, an assertion on that run, not another run
+  local want got
+  want=$(printf '        %s\n' "$@")
+  got=$(grep '^        ' "$NEG/run.out")
+  if [ "$got" = "$want" ]; then
+    echo "named=$*"
+  else
+    echo "named=$*  UNEXPECTED (listed: $(printf '%s\n' "$got" | sed 's/^ *//' | paste -sd ' ' -))"; unexpected=$((unexpected + 1))
+  fi
+}
 holds() {  # holds <text>: after run, its output holds each line of the text, in order (a passing run's named lines); a mismatch is UNEXPECTED, an assertion on that run
   if says "$1" "$NEG/run.out"; then echo "holds=$(printf '%s' "$1" | paste -sd ';' -)"
   else echo "holds=$(printf '%s' "$1" | paste -sd ';' -)  UNEXPECTED (not in the output, in order)"; unexpected=$((unexpected + 1)); fi
@@ -159,6 +184,27 @@ times() {  # times <n> <line>: after run, its output holds exactly this whole li
   got=$(grep -cxF -- "$2" "$NEG/run.out")
   if [ "$got" -eq "$1" ]; then echo "times=$1 x $2"
   else echo "times=$1 x $2  UNEXPECTED (found $got)"; unexpected=$((unexpected + 1)); fi
+}
+shim() {  # shim: $NEG/shim/git, the real git but for a call whose arguments hold $GATE_TEST_REFUSE, which it refuses (exit 128); a case puts it first on PATH
+  [ -x "$NEG/shim/git" ] && return 0
+  mkdir -p "$NEG/shim" || die "shim: mkdir"
+  cat > "$NEG/shim/git" <<SH || die "shim: write"
+#!/usr/bin/env bash
+# git, refusing a call whose arguments hold \$GATE_TEST_REFUSE; every other call is the real git
+case " \$* " in *"\${GATE_TEST_REFUSE:?}"*) echo "git (test shim): refusing: \$*" >&2; exit 128 ;; esac
+exec "$(command -v git)" "\$@"
+SH
+  chmod +x "$NEG/shim/git" || die "shim: chmod"
+}
+upper() {  # upper: 0 on a case-insensitive file system, where the scratch path typed in upper case is the same directory; otherwise a note that the upper-case runs are skipped, and 1
+  [ -d "$NEGUP" ] && return 0
+  note "this file system is case-sensitive: the scratch path in upper case is no directory, so the upper-case runs are skipped"; return 1
+}
+upper_run() {  # upper_run <case> <expected status> [<expected text, when the status is not 0>] <cmd...>: run, from <case>/patchbay's path typed in upper case
+  local c=$1 want=$2 u text=(); shift 2
+  if [ "$want" -ne 0 ]; then text=("$1"); shift; fi
+  u=$NEGUP/$(printf '%s' "$c/patchbay" | tr '[:lower:]' '[:upper:]')
+  run "$c" "$want" ${text[@]+"${text[@]}"} bash -c 'cd "$1" && shift && exec "$@"' _ "$u" "$@"
 }
 hdr() { printf '\n### %s\n' "$1"; }
 note() { printf -- '-- %s\n' "$1"; }
@@ -217,22 +263,21 @@ f) hdr "f (an untracked agent-os/standards/base/process/extra.md: step 6 must na
    run f 0 git status --short
    run f 1 $'  extra    process/extra.md\nFAIL  drift from patchbay-standards at\n'"$F6" scripts/gate.sh
    only 'extra    process/extra.md' 'index    base: section identical' 'script   scripts/sync-standards.sh matches' ;;
-g) hdr "g (step 1 lists files with git: an ignored scripts/.DS_Store passes; the copy entered through its path in upper case passes step 1; a script in a three-way merge conflict is listed once; a corrupt index is refused by name; a tracked scripts/notes.txt is refused by name; a tracked script deleted from the disk, and a tracked symlink to nothing, are each refused by name; a copy that is not a git work tree, and the same copy inside another repository's work tree, are each refused by name)"
+g) hdr "g (step 1 lists files with git: an ignored scripts/.DS_Store passes; the copy entered through its path in upper case passes the gate; a script in a three-way merge conflict is listed once; a corrupt index, a git that refuses step 1's listing of scripts/, and a mktemp that makes no directory, are each refused by name; a tracked scripts/notes.txt is refused by name; a tracked script deleted from the disk, and a tracked symlink to nothing, are each refused by name; a copy that is not a git work tree, and the same copy inside another repository's work tree, under another repository's .git/ and in a bare repository, are each refused by name)"
    mk g; touch "$NEG/g/patchbay/scripts/.DS_Store" || die "g: touch"
    note "untracked, ignored scripts/.DS_Store present (must pass, exit 0; the gate never lists it):"
    run g 0 git status --short --ignored scripts
    run g 0 scripts/gate.sh
-   UPC=$(printf '%s' "$NEG/g/patchbay" | tr '[:lower:]' '[:upper:]')
-   if [ -d "$UPC" ]; then
-     note "the copy entered through its path in upper case (this file system is case-insensitive): step 1 asks git whether this is the top, compares no paths, and must pass, as steps 2-5 do; step 6 must then fail in the synced sync-standards.sh, whose own root check still compares the two paths as strings (proposed upstream), exit 1:"
-     run g 1 $'ok   scripts/sync-standards.sh\nok   every test passed\nFAIL  run from the consuming project\'s root, the top of its git work tree\n'"$F6" bash -c 'cd "$1" && scripts/gate.sh' _ "$UPC"
+   if upper; then
+     note "the copy entered through its path in upper case (this file system is case-insensitive): step 1 asks git whether this is the top and compares no paths, and step 6's sync-standards.sh does the same, so the gate must pass, exit 0:"
+     upper_run g 0 pwd
+     holds '<COPY G>/PATCHBAY'
+     upper_run g 0 scripts/gate.sh
      if old_file g 6adf50e scripts/gate.sh; then
        note "the gate at 6adf50e on the same: step 1 compares pwd -P with git's top as strings and refuses the repository's own root (the bug):"
-       run g 1 "FAIL  step 1/6: not a git work tree rooted at <COPY G>/PATCHBAY; the gate lists files with git ls-files" bash -c 'cd "$1" && scripts/gate-6adf50e.sh' _ "$UPC"
+       upper_run g 1 "FAIL  step 1/6: not a git work tree rooted at <COPY G>/PATCHBAY; the gate lists files with git ls-files" scripts/gate-6adf50e.sh
        rm "$NEG/g/patchbay/scripts/gate-6adf50e.sh" || die "g: rm old gate"
      fi
-   else
-     note "this file system is case-sensitive: the copy's path in upper case is no directory, so the upper-case run is skipped"
    fi
    printf '#!/usr/bin/env bash\necho conflict\n' > "$NEG/g/patchbay/scripts/conflict.sh" || die "g: conflict.sh"
    ch=$(git -C "$NEG/g/patchbay" hash-object -w scripts/conflict.sh) || die "g: hash-object"
@@ -251,8 +296,8 @@ g) hdr "g (step 1 lists files with git: an ignored scripts/.DS_Store passes; the
    git -C "$NEG/g/patchbay" rm -q --cached scripts/conflict.sh || die "g: rm conflict"; rm "$NEG/g/patchbay/scripts/conflict.sh" || die "g: rm conflict file"
    cp "$NEG/g/patchbay/.git/index" "$NEG/g-index" || die "g: save index"
    printf 'garbage' > "$NEG/g/patchbay/.git/index" || die "g: corrupt index"
-   note "the copy's index overwritten with garbage, so git cannot list (must fail at step 1 naming the listing, exit 1, 2/6 never printed):"
-   run g 1 $'index file smaller than expected\nFAIL  step 1/6: git could not list the files under scripts/ (see above)' scripts/gate.sh
+   note "the copy's index overwritten with garbage, so git cannot list (must fail at step 1 naming its first listing, of the tracked files a .gitignore ignores, exit 1, 2/6 never printed):"
+   run g 1 $'index file smaller than expected\nFAIL  step 1/6: git could not list the tracked files a .gitignore ignores (see above)' scripts/gate.sh
    if old_file g 6adf50e scripts/gate.sh; then
      note "the gate at 6adf50e on the same: the listing's failure is swallowed in the process substitution, and step 1 says git lists no file (the bug):"
      run g 1 "FAIL  step 1/6: git lists no file under scripts/" scripts/gate-6adf50e.sh
@@ -260,6 +305,14 @@ g) hdr "g (step 1 lists files with git: an ignored scripts/.DS_Store passes; the
    fi
    cp "$NEG/g-index" "$NEG/g/patchbay/.git/index" || die "g: restore index"
    run g 0 git status --short scripts
+   shim
+   note "a git on PATH that refuses step 1's listing of scripts/ alone, every other call the real git, so the listing of the tracked files a .gitignore ignores passes first (must fail at step 1 naming the scripts/ listing, exit 1, 2/6 never printed):"
+   run g 1 $'git (test shim): refusing\nFAIL  step 1/6: git could not list the files under scripts/ (see above)' env PATH="$NEG/shim:$PATH" GATE_TEST_REFUSE=' --exclude-standard -- scripts ' scripts/gate.sh
+   mkdir -p "$NEG/nomktemp" || die "g: mkdir nomktemp"
+   printf '#!/usr/bin/env bash\necho "mktemp (test shim): refusing" >&2; exit 1\n' > "$NEG/nomktemp/mktemp" || die "g: write mktemp shim"
+   chmod +x "$NEG/nomktemp/mktemp" || die "g: chmod mktemp shim"
+   note "a mktemp on PATH that makes no directory, so step 1 has nowhere to write git's listings (must fail at step 1 by name, exit 1, 2/6 never printed):"
+   run g 1 $'mktemp (test shim): refusing\nFAIL  step 1/6: mktemp -d made no temporary directory for git\'s listings (see above)' env PATH="$NEG/nomktemp:$PATH" scripts/gate.sh
    printf 'a note\n' > "$NEG/g/patchbay/scripts/notes.txt" || die "g: notes"; git -C "$NEG/g/patchbay" add scripts/notes.txt || die "g: add notes"
    note "scripts/notes.txt tracked, neither .sh nor a bash shebang (must fail at step 1 naming it, exit 1, 2/6 never printed):"
    run g 1 "FAIL  step 1/6: scripts/notes.txt is not a shell script; only shell scripts live under scripts/" scripts/gate.sh
@@ -292,7 +345,21 @@ g) hdr "g (step 1 lists files with git: an ignored scripts/.DS_Store passes; the
    if old_file go/copy 92cd215 scripts/gate.sh; then
      note "the gate at 92cd215 on the same: step 1 lists the copy's files as the outer repository's untracked ones and passes, steps 2-5 run, and only the sync script's own guard, at step 6, stops it, for another reason (the bug):"
      run go/copy 1 $'ok   scripts/sync-standards.sh\nok   every test passed\nFAIL  run from the consuming project\'s root, the top of its git work tree\nFAIL  step 6/6' scripts/gate-92cd215.sh
-   fi ;;
+   fi
+   rm -rf "$NEG/go/copy/patchbay/.venv" || die "g: rm the .venv the old gate made"
+   mkdir "$NEG/gg" || die "g: mkdir gg"; git -c init.defaultBranch=main -C "$NEG/gg" init -q || die "g: git init gg"
+   cp -R "$NEG/go/copy" "$NEG/gg/.git/tree" || die "g: cp into gg/.git"
+   git init -q --bare "$NEG/gb.git" || die "g: git init --bare"; cp -R "$NEG/go/copy" "$NEG/gb.git/tree" || die "g: cp into gb.git"
+   note "the same copy, still without .git, inside another repository's .git/ (<copy gg>/.git/tree), where git rev-parse --show-cdup prints nothing but git is in no work tree (must fail at step 1 by name, exit 1):"
+   run gg/.git/tree 0 git rev-parse --is-inside-work-tree --show-cdup
+   run gg/.git/tree 1 "FAIL  step 1/6: not a git work tree rooted at <copy gg>/.git/tree/patchbay; the gate lists files with git ls-files" scripts/gate.sh
+   if old_file gg/.git/tree 2c98c8a scripts/gate.sh; then
+     note "the gate at 2c98c8a (main before this spec) on the same: --show-cdup alone passes the root guard, and step 1 fails at the listing, for another reason (the bug):"
+     run gg/.git/tree 1 "FAIL  step 1/6: git could not list the files under scripts/ (see above)" scripts/gate-2c98c8a.sh
+   fi
+   note "the same copy inside a bare repository (<copy gb>.git/tree; must fail at step 1 by name, exit 1):"
+   run gb.git/tree 0 git rev-parse --is-inside-work-tree --show-cdup
+   run gb.git/tree 1 "FAIL  step 1/6: not a git work tree rooted at <copy gb>.git/tree/patchbay; the gate lists files with git ls-files" scripts/gate.sh ;;
 h) hdr "h (src/patchbay/_broken.py misformatted: step 1 passes, step 2 must name the file, exit 1, and never print 3/6)"
    mk h; printf '"""A module the formatter would rewrite."""\n\nx  =  1\n' > "$NEG/h/patchbay/src/patchbay/_broken.py" || die "h: write"
    run h 1 $'--> src/patchbay/_broken.py\n'"$F2FMT" scripts/gate.sh ;;
@@ -359,15 +426,28 @@ o) hdr "o ([tool.uv] required-version changed to ==0.13.6 in the copy's pyprojec
    note "the uv running here:"
    run o 0 uv --version
    run o 1 $'error: Required uv version `==0.13.6` does not match the running version `0.13.7`\n'"$F2SYNC" scripts/gate.sh ;;
-p) hdr "p (steps 2-4 read git's list: an ignored src/patchbay/local_settings.py, unformatted, with an unused import and an untyped argument, passes the gate; force-added while .gitignore still matches it, git lists it and step 2 must name it, 3/6 never printed; clean but for a type error, step 4 must name it, where mypy walking under exclude_gitignore, the first spec's step 4, passes; in a linked worktree, a module hidden only by .git/info/exclude passes the gate, where that walk names it)"
+p) hdr "p (the listings read what git lists: an ignored src/patchbay/local_settings.py, unformatted, with an unused import and an untyped argument, passes the gate; force-added while .gitignore still matches it, step 1 must name it alone, and with a second such file both under one FAIL line, 2/6 never printed; the same file typed wrong, still force-added, mypy walking under exclude_gitignore, the first spec's step 4, passes; with the pattern out of .gitignore, git lists it and nothing refuses it, so step 2 must name it, and clean but for a type error step 4 must name it; matched only by .git/info/exclude or a global excludes file, the machine's own, step 1 passes and step 2 reads it; in a linked worktree, a module hidden only by .git/info/exclude passes the gate, where that walk names it)"
    mk p; printf 'import os\ndef f(x)->int:\n  return x\n' > "$NEG/p/patchbay/src/patchbay/local_settings.py" || die "p: write"
    run p 0 git check-ignore -v src/patchbay/local_settings.py
    note "the gate (must pass, exit 0: git's list does not hold the file, so neither ruff nor mypy is given it):"
    run p 0 scripts/gate.sh
    git -C "$NEG/p/patchbay" add -f src/patchbay/local_settings.py || die "p: add -f"
-   note "force-added: git lists it as tracked, though .gitignore still matches it, and step 2 must name it, exit 1, 3/6 never printed:"
-   run p 0 git ls-files src/patchbay/local_settings.py
-   run p 1 $'--> src/patchbay/local_settings.py\n'"$F2FMT" scripts/gate.sh
+   note "force-added: git lists it as tracked, and the copy's .gitignore still matches it, so a tool that reads .gitignore itself would skip it (must fail at step 1 naming it alone, exit 1, 2/6 never printed):"
+   run p 0 git ls-files --cached --ignored --exclude-per-directory=.gitignore
+   run p 1 "$F1IGN" scripts/gate.sh
+   named src/patchbay/local_settings.py
+   if old_file p 2c98c8a scripts/gate.sh; then
+     note "the gate at 2c98c8a (main before this spec) on the same: step 1 passes, and step 2 reads a file that a tool reading .gitignore would have skipped (the state the refusal closes):"
+     run p 1 $'--> src/patchbay/local_settings.py\n'"$F2FMT" scripts/gate-2c98c8a.sh
+     rm "$NEG/p/patchbay/scripts/gate-2c98c8a.sh" || die "p: rm old gate"
+   fi
+   printf '"""A second file force-added."""\n' > "$NEG/p/patchbay/tests/unit/local_settings.py" || die "p: write the second file"
+   git -C "$NEG/p/patchbay" add -f tests/unit/local_settings.py || die "p: add -f the second file"
+   note "a second file force-added, tests/unit/local_settings.py, under the same pattern (must fail at step 1 naming both under one FAIL line, exit 1):"
+   run p 1 "$F1IGN" scripts/gate.sh
+   named src/patchbay/local_settings.py tests/unit/local_settings.py
+   git -C "$NEG/p/patchbay" rm -q --cached tests/unit/local_settings.py || die "p: rm --cached the second file"
+   rm "$NEG/p/patchbay/tests/unit/local_settings.py" || die "p: rm the second file"
    cat > "$NEG/p/patchbay/src/patchbay/local_settings.py" <<'SRC' || die "p: rewrite"
 """A function that returns Any where it promises int; mypy --strict refuses it, ruff does not."""
 
@@ -378,11 +458,38 @@ def parsed() -> int:
     """Return whatever json gives, typed as int."""
     return json.loads("1")
 SRC
-   note "the same file, still force-added, formatted and lint-clean but returning Any where it promises int: steps 2-3 pass, step 4 must name it, exit 1, 5/6 never printed:"
-   run p 1 $'ok   no violation\nsrc/patchbay/local_settings.py:8: error: Returning Any from function declared to return "int"  [no-any-return]\nFAIL  step 4/6: mypy found a type error (see above)' scripts/gate.sh
-   note "mypy walking files = [src, tests] under exclude_gitignore, the first spec's step 4, on the same: it skips the tracked file .gitignore matches and passes (finding 3, the bug as it was):"
+   note "mypy walking files = [src, tests] under exclude_gitignore, the first spec's step 4, on the same file typed wrong and still force-added: it skips the tracked file .gitignore matches and passes (finding 3, the bug as it was):"
    run p 0 uv run --locked mypy --exclude-gitignore
-   holds 'Success: no issues found in 3 source files'
+   holds 'Success: no issues found in'
+   printf 'import os\ndef f(x)->int:\n  return x\n' > "$NEG/p/patchbay/src/patchbay/local_settings.py" || die "p: write again"
+   sed -i.bak '/^local_settings\.py$/d' "$NEG/p/patchbay/.gitignore" || die "p: sed .gitignore"; rm "$NEG/p/patchbay/.gitignore.bak" || die "p: rm .bak"
+   grep -qx 'local_settings.py' "$NEG/p/patchbay/.gitignore" && die "p: the pattern is still in .gitignore"
+   note "the pattern out of the copy's .gitignore: tracked and matched by nothing, so nothing refuses it and step 2 must name it, exit 1, 3/6 never printed:"
+   run p 0 git status --short src/patchbay/local_settings.py
+   run p 1 $'ok   the locked toolchain synced\n--> src/patchbay/local_settings.py\n'"$F2FMT" scripts/gate.sh
+   printf 'src/patchbay/local_settings.py\n' >> "$NEG/p/patchbay/.git/info/exclude" || die "p: info/exclude"
+   note "matched only by .git/info/exclude, the clone's own file: step 1 reads committed .gitignore files alone, so it passes, and step 2 must name the file, exit 1:"
+   run p 0 git check-ignore -v --no-index src/patchbay/local_settings.py
+   run p 1 $'ok   scripts/sync-standards.sh\n--> src/patchbay/local_settings.py\n'"$F2FMT" scripts/gate.sh
+   sed -i.bak '/local_settings/d' "$NEG/p/patchbay/.git/info/exclude" || die "p: sed info/exclude"; rm "$NEG/p/patchbay/.git/info/exclude.bak" || die "p: rm .bak"
+   grep -q 'local_settings' "$NEG/p/patchbay/.git/info/exclude" && die "p: still in info/exclude"
+   printf 'src/patchbay/local_settings.py\n' > "$NEG/p-global-ignore" || die "p: global ignore"
+   printf '[core]\n\texcludesFile = %s\n' "$NEG/p-global-ignore" > "$NEG/p-gitconfig" || die "p: global config"
+   note "matched only by a global excludes file (GIT_CONFIG_GLOBAL at a scratch config naming it, the developer's own): step 1 passes, and step 2 must name the file, exit 1:"
+   run p 0 env GIT_CONFIG_GLOBAL="$NEG/p-gitconfig" git check-ignore -v --no-index src/patchbay/local_settings.py
+   run p 1 $'ok   scripts/sync-standards.sh\n--> src/patchbay/local_settings.py\n'"$F2FMT" env GIT_CONFIG_GLOBAL="$NEG/p-gitconfig" scripts/gate.sh
+   cat > "$NEG/p/patchbay/src/patchbay/local_settings.py" <<'SRC' || die "p: rewrite again"
+"""A function that returns Any where it promises int; mypy --strict refuses it, ruff does not."""
+
+import json
+
+
+def parsed() -> int:
+    """Return whatever json gives, typed as int."""
+    return json.loads("1")
+SRC
+   note "the same file, tracked and matched by nothing, formatted and lint-clean but returning Any where it promises int: steps 2-3 pass, step 4 must name it, exit 1, 5/6 never printed:"
+   run p 1 $'ok   no violation\nsrc/patchbay/local_settings.py:8: error: Returning Any from function declared to return "int"  [no-any-return]\nFAIL  step 4/6: mypy found a type error (see above)' scripts/gate.sh
    mk pw
    git -c user.name=test -c user.email=test@example.invalid -c commit.gpgsign=false -C "$NEG/pw/patchbay" commit -qm "the copy" || die "p: commit pw"
    mkdir "$NEG/pwt" || die "p: mkdir pwt"
@@ -397,7 +504,7 @@ SRC
    run pwt 1 'src/patchbay/_excluded.py:8: error: Returning Any from function declared to return "int"  [no-any-return]' uv run --locked mypy --exclude-gitignore
    note "the gate in the worktree (must pass, exit 0: git's list does not hold the file):"
    run pwt 0 scripts/gate.sh ;;
-q) hdr "q (step 5 refuses what pytest would read that git ignores: an ignored failing tests/unit/test_local.py; an ignored tests/unit/conftest.py that deselects a tracked failing test, which pytest given --ignore for it, the first spec's step 5, passes; an ignored conftest.py at the root; each must fail step 5 by name before pytest runs, exit 1, 6/6 never printed)"
+q) hdr "q (step 5 refuses what pytest would read that git ignores: an ignored failing tests/unit/test_local.py; an ignored tests/unit/conftest.py that deselects a tracked failing test, which pytest given --ignore for it, the first spec's step 5, passes; an ignored conftest.py at the root; an ignored pytest.toml, .pytest.toml, pytest.ini or .pytest.ini at the root that deselects a tracked failing test; an ignored test*.txt under tests/ at any depth; each must fail step 5 by name before pytest runs, exit 1, 6/6 never printed; an ignored .txt pytest does not collect passes)"
    mk q; printf 'tests/unit/test_local.py\n' >> "$NEG/q/patchbay/.gitignore" || die "q: ignore test_local"
    cat > "$NEG/q/patchbay/tests/unit/test_local.py" <<'SRC' || die "q: write test_local"
 """A local test that states the wrong version."""
@@ -430,7 +537,7 @@ SRC
 
 
 def pytest_collection_modifyitems(config, items):
-    keep = [i for i in items if "broken" not in i.nodeid]
+    keep = [i for i in items if "test_broken_assertion" not in i.nodeid]
     config.hook.pytest_deselected(items=[i for i in items if i not in keep])
     items[:] = keep
 SRC
@@ -448,23 +555,62 @@ SRC
    printf 'raise RuntimeError("an ignored root conftest was imported")\n' > "$NEG/q/patchbay/conftest.py" || die "q: write root conftest"
    note "an ignored conftest.py at the root, which pytest loads though nothing under tests/ is ignored (must fail at step 5 naming it, exit 1):"
    run q 0 git status --short --ignored conftest.py
-   run q 1 $'ok   no type error\nFAIL  step 5/6: conftest.py is a .py file git ignores, which pytest would read; remove it, or stop ignoring it' scripts/gate.sh ;;
+   run q 1 $'ok   no type error\nFAIL  step 5/6: conftest.py is a .py file git ignores, which pytest would read; remove it, or stop ignoring it' scripts/gate.sh
+   rm "$NEG/q/patchbay/conftest.py" || die "q: rm root conftest"
+   cat > "$NEG/q/patchbay/tests/unit/test_probe_fail.py" <<'SRC' || die "q: write test_probe_fail"
+"""A test that states the wrong version."""
+
+import patchbay
+
+
+def test_probe_fail() -> None:
+    """Fails: the version is not 9.9.9."""
+    assert patchbay.__version__ == "9.9.9"
+SRC
+   git -C "$NEG/q/patchbay" add tests/unit/test_probe_fail.py || die "q: add test_probe_fail"
+   for cfg in pytest.toml .pytest.toml pytest.ini .pytest.ini; do
+     case "$cfg" in
+       *.toml) printf '[pytest]\naddopts = ["-k", "not probe_fail"]\n' ;;
+       *) printf '[pytest]\naddopts = -k "not probe_fail"\n' ;;
+     esac > "$NEG/q/patchbay/$cfg" || die "q: write $cfg"
+     printf '/%s\n' "$cfg" >> "$NEG/q/patchbay/.gitignore" || die "q: ignore $cfg"
+     note "an ignored $cfg at the root, whose addopts deselect a tracked failing test (must fail at step 5 naming it before pytest runs, exit 1):"
+     run q 0 git check-ignore -v "$cfg"
+     run q 1 $'ok   no type error\nFAIL  step 5/6: '"$cfg"' is a pytest configuration file git ignores, which pytest would read in place of pyproject.toml; remove it, or stop ignoring it' scripts/gate.sh
+     if [ "$cfg" = pytest.ini ] && old_file q 2c98c8a scripts/gate.sh; then
+       note "the gate at 2c98c8a (main before this spec) on the same: step 5 refuses only .py files, pytest reads the ignored file in place of pyproject.toml, the tracked failing test is deselected, and the gate passes (the bug):"
+       run q 0 scripts/gate-2c98c8a.sh
+       holds '1 deselected'
+       rm "$NEG/q/patchbay/scripts/gate-2c98c8a.sh" || die "q: rm old gate"
+     fi
+     rm "$NEG/q/patchbay/$cfg" || die "q: rm $cfg"
+   done
+   git -C "$NEG/q/patchbay" rm -q --cached tests/unit/test_probe_fail.py || die "q: rm --cached test_probe_fail"
+   rm "$NEG/q/patchbay/tests/unit/test_probe_fail.py" || die "q: rm test_probe_fail"
+   printf 'A doctest that fails.\n\n>>> 1 + 1\n3\n' > "$NEG/q/patchbay/tests/unit/test_local.txt" || die "q: write test_local.txt"
+   printf 'tests/unit/test_local.txt\n' >> "$NEG/q/patchbay/.gitignore" || die "q: ignore test_local.txt"
+   note "an ignored tests/unit/test_local.txt holding a failing doctest, which pytest collects by the name (must fail at step 5 naming it before pytest runs, exit 1):"
+   run q 0 git check-ignore -v tests/unit/test_local.txt
+   run q 1 $'ok   no type error\nFAIL  step 5/6: tests/unit/test_local.txt is a doctest file git ignores, which pytest would read; remove it, or stop ignoring it' scripts/gate.sh
+   rm "$NEG/q/patchbay/tests/unit/test_local.txt" || die "q: rm test_local.txt"
+   printf 'A doctest that fails.\n\n>>> 1 + 1\n3\n' > "$NEG/q/patchbay/tests/unit/testing/test_deep.txt" || die "q: write test_deep.txt"
+   printf 'tests/unit/testing/test_deep.txt\n' >> "$NEG/q/patchbay/.gitignore" || die "q: ignore test_deep.txt"
+   note "the same deeper, as tests/unit/testing/test_deep.txt (the name is matched at any depth; must fail at step 5 naming it, exit 1):"
+   run q 1 $'ok   no type error\nFAIL  step 5/6: tests/unit/testing/test_deep.txt is a doctest file git ignores, which pytest would read; remove it, or stop ignoring it' scripts/gate.sh
+   rm "$NEG/q/patchbay/tests/unit/testing/test_deep.txt" || die "q: rm test_deep.txt"
+   printf 'A doctest that fails.\n\n>>> 1 + 1\n3\n' > "$NEG/q/patchbay/tests/unit/local.txt" || die "q: write local.txt"
+   printf 'tests/unit/local.txt\n' >> "$NEG/q/patchbay/.gitignore" || die "q: ignore local.txt"
+   note "an ignored tests/unit/local.txt, the same doctest under a name pytest does not collect (must pass, exit 0: only what pytest would read is refused):"
+   run q 0 git check-ignore -v tests/unit/local.txt
+   run q 0 scripts/gate.sh ;;
 r) hdr "r (a listing git cannot make fails its step by name: a git on PATH that refuses only the listing call of step 2, then of step 4, then of step 5, each step failing by name, exit 1, the step after it never reached)"
-   mk r
-   mkdir "$NEG/shim" || die "r: mkdir shim"
-   cat > "$NEG/shim/git" <<SH || die "r: write shim"
-#!/usr/bin/env bash
-# git, refusing a call whose arguments hold \$GATE_TEST_REFUSE; every other call is the real git
-case " \$* " in *"\$GATE_TEST_REFUSE"*) echo "git (test shim): refusing: \$*" >&2; exit 128 ;; esac
-exec "$(command -v git)" "\$@"
-SH
-   chmod +x "$NEG/shim/git" || die "r: chmod shim"
-   note "the listing of step 2 (git ls-files ... -- .) refused:"
-   run r 1 $'git (test shim): refusing\nFAIL  step 2/6: git could not list the files of the tree (see above)' env PATH="$NEG/shim:$PATH" GATE_TEST_REFUSE=' -- . ' scripts/gate.sh
+   mk r; shim
+   note "the listing of step 2 (git ls-files ... --exclude-standard -- .) refused, step 1's refusal of the same path passing first:"
+   run r 1 $'git (test shim): refusing\nFAIL  step 2/6: git could not list the files of the tree (see above)' env PATH="$NEG/shim:$PATH" GATE_TEST_REFUSE=' --exclude-standard -- . ' scripts/gate.sh
    note "the listing of step 4 (git ls-files ... -- src tests) refused:"
    run r 1 $'ok   no violation\ngit (test shim): refusing\nFAIL  step 4/6: git could not list the files under src/ and tests/ (see above)' env PATH="$NEG/shim:$PATH" GATE_TEST_REFUSE=' -- src tests ' scripts/gate.sh
-   note "the listing of step 5 (git ls-files --others --ignored ...) refused:"
-   run r 1 $'ok   no type error\ngit (test shim): refusing\nFAIL  step 5/6: git could not list what it ignores under tests/ (see above)' env PATH="$NEG/shim:$PATH" GATE_TEST_REFUSE=' --ignored ' scripts/gate.sh ;;
+   note "the listing of step 5 (git ls-files --others --ignored ...) refused, step 1's --cached --ignored passing first:"
+   run r 1 $'ok   no type error\ngit (test shim): refusing\nFAIL  step 5/6: git could not list what it ignores under tests/ (see above)' env PATH="$NEG/shim:$PATH" GATE_TEST_REFUSE=' --others --ignored ' scripts/gate.sh ;;
 u) hdr "u (not run as the gate: --help and a stray argument each exit 2 with the usage line and run no step; a script that cannot enter the repository root exits 2 saying so; the clean copy exits 0)"
    mk u
    note "clean copy (must pass, exit 0):"

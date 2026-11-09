@@ -2,9 +2,9 @@
 
 An event is a frozen model. Its name is past tense and dotted (`parameter.changed`), its payload
 is typed fields on its own class, never a dict, and its `at` is the UTC time it was built. A time
-given for `at` is in UTC itself, a zone whose offset is zero at every instant, and is held as
-`datetime.UTC`; a naive time, or a zone such as Europe/London that is at UTC only in winter, is
-refused.
+given for `at` is in UTC itself, its zone's offset zero both for no particular instant and at that
+time, and is held as `datetime.UTC`; a naive time, or a zone such as Europe/London that is at UTC
+only in winter, is refused.
 
 The bus is synchronous and in-process: `publish` calls every subscriber whose type the event is,
 in the order they subscribed, and returns once all have run. The bus never alters an event; the
@@ -63,14 +63,15 @@ class Event(PatchbayModel, frozen=True):
     @field_validator("at", mode="after")
     @classmethod
     def _in_utc(cls, at: datetime) -> datetime:
-        # The zone is judged, not the instant: utcoffset(None) is a fixed zone's one offset, and
-        # None for a zone whose offset moves (the PR 11 revision's verification/probes.txt,
-        # footing.py C).
+        # Both answers must be zero. utcoffset(None) is a fixed zone's one offset, and None for a
+        # zone whose offset moves, so London is refused in every season (the PR 11 revision's
+        # verification/probes.txt, footing.py C); at.utcoffset() is the zone's offset at this
+        # time, which a zone answering zero for no instant need not share (issue #13).
         zone = at.tzinfo
         if zone is None:
             msg = f"an event's time is in UTC, given a naive time {at.isoformat()}"
             raise ValueError(msg)
-        if zone.utcoffset(None) != timedelta(0):
+        if zone.utcoffset(None) != timedelta(0) or at.utcoffset() != timedelta(0):
             msg = (
                 f"an event's time is in UTC, offset zero all year, given {at.isoformat()} ({zone})"
             )

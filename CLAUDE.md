@@ -49,13 +49,14 @@ prohibition is on attribution markers, not on citing the work.
   `agent-os/standards/base/`, pinned to the commit in `agent-os/standards/base/.version`, and this
   repository's own beside them. A spec is not complete until its verification gate passes —
   `scripts/gate.sh`, six steps in order: `bash -n` on every shell script under `scripts/` as git
-  lists them, at a work-tree top that is the repository root (any other file there fails the
-  step); `uv sync --locked`, then `uv run --locked ruff format --check .`; `uv run --locked ruff
+  lists them, at a work-tree top that is the repository root, with no tracked file a `.gitignore`
+  ignores (any other file there fails the step); `uv sync --locked`, then `uv run --locked ruff format --check .`; `uv run --locked ruff
   check .`; `uv run --locked mypy`; `uv run --locked pytest`, the four reading their rules from
   the `[tool.*]` sections of `pyproject.toml` and their pins from its `[dependency-groups] dev` as
   `uv.lock` resolves them, under the uv its `[tool.uv] required-version` pins, and reading only
   the files git lists (ruff and mypy are given git's list of `.py` and `.pyi` files; pytest walks
-  `tests/` once no `.py` file there, and no root `conftest.py`, is one git ignores); and
+  `tests/` once no `.py` or `test*.txt` file there, and no root `conftest.py` or root file pytest
+  reads ahead of `pyproject.toml`, is one git ignores); and
   `scripts/sync-standards.sh --check`, holding
   `agent-os/standards/base/`, the `base:` section of `agent-os/standards/index.yml` and the sync
   script byte-identical to `patchbay-standards` at the pinned commit, read from the sibling

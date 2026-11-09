@@ -1,0 +1,244 @@
+Probes of the tools this spec's rules rest on, run 2026-11-09 on branch task/12-gate-spec-3-take-patchbay-standards-17-19-20-and-21-after-the-sync-that-brings-them-in,
+on scratch exports of this repository outside the tree, at the pins in uv.lock. Each section shows
+its setup before reading its result; every run's status is printed.
+
+## 1. What pytest 9.2.0 reads that git can ignore (issue #12, item 8)
+
+An export of HEAD (2c98c8a), git-initialised and git-added, a local .venv from uv.lock. Each case
+writes its file, adds one line to the export's .gitignore and shows git check-ignore naming that
+line, then runs `uv run --locked pytest -v` (-v against the -q in addopts, so the configfile header
+prints); the lines below are the rootdir, configfile, summary and status. The source at the pin
+(_pytest/config/findpaths.py CONFIG_LOADERS_BY_NAME, _pytest/doctest.py _is_doctest) agrees with
+every case. <export> is the scratch path.
+
+Results: pytest.toml, .pytest.toml, pytest.ini and .pytest.ini at the root are read in place of
+pyproject.toml, and an ignored one holding addopts deselects a tracked failing test, exit 0.
+test*.txt under tests/, at any depth, is collected as a doctest. tox.ini and setup.cfg come after
+pyproject.toml and are not the config, nor is a pytest.ini under tests/. An unparsable ignored
+tox.ini stops the run at a usage error, a local failure and never a false pass, so it is not refused.
+
+$ uv run --locked pytest --version
+Using CPython 3.12.16
+Creating virtual environment at: .venv
+   Building patchbay-core @ file://<export>
+      Built patchbay-core @ file://<export>
+Installed 30 packages in 43ms
+pytest 9.2.0
+
+### control: a tracked failing test, nothing else (the run must fail; the config is pyproject.toml)
+rootdir: <export>
+configfile: pyproject.toml
+======================== 1 failed, 270 passed in 3.76s =========================
+exit=1
+
+### pytest.toml at the root, ignored, its addopts deselecting the failing test (read: exit 0, configfile: pytest.toml)
+$ git check-ignore -v pytest.toml
+.gitignore:224:/pytest.toml	pytest.toml
+setup exit=0
+$ cat pytest.toml
+[pytest]
+addopts = ["-k", "not probe_fail"]
+rootdir: <export>
+configfile: pytest.toml (WARNING: ignoring pytest config in pyproject.toml!)
+collecting ... collected 271 items / 1 deselected / 270 selected
+====================== 270 passed, 1 deselected in 0.68s =======================
+exit=0
+
+### .pytest.toml at the root, ignored, its addopts deselecting the failing test (read: exit 0, configfile: .pytest.toml)
+$ git check-ignore -v .pytest.toml
+.gitignore:224:/.pytest.toml	.pytest.toml
+setup exit=0
+$ cat .pytest.toml
+[pytest]
+addopts = ["-k", "not probe_fail"]
+rootdir: <export>
+configfile: .pytest.toml (WARNING: ignoring pytest config in pyproject.toml!)
+collecting ... collected 271 items / 1 deselected / 270 selected
+====================== 270 passed, 1 deselected in 0.68s =======================
+exit=0
+
+### pytest.ini at the root, ignored, its addopts deselecting the failing test (read: exit 0, configfile: pytest.ini)
+$ git check-ignore -v pytest.ini
+.gitignore:224:/pytest.ini	pytest.ini
+setup exit=0
+$ cat pytest.ini
+[pytest]
+addopts = -k "not probe_fail"
+rootdir: <export>
+configfile: pytest.ini (WARNING: ignoring pytest config in pyproject.toml!)
+collecting ... collected 271 items / 1 deselected / 270 selected
+====================== 270 passed, 1 deselected in 0.69s =======================
+exit=0
+
+### .pytest.ini at the root, ignored, its addopts deselecting the failing test (read: exit 0, configfile: .pytest.ini)
+$ git check-ignore -v .pytest.ini
+.gitignore:224:/.pytest.ini	.pytest.ini
+setup exit=0
+$ cat .pytest.ini
+[pytest]
+addopts = -k "not probe_fail"
+rootdir: <export>
+configfile: .pytest.ini (WARNING: ignoring pytest config in pyproject.toml!)
+collecting ... collected 271 items / 1 deselected / 270 selected
+====================== 270 passed, 1 deselected in 0.71s =======================
+exit=0
+
+### an empty pytest.ini at the root, ignored (read even with no [pytest] section: configfile: pytest.ini, the failing test still fails)
+.gitignore:224:/pytest.ini	pytest.ini
+setup exit=0
+rootdir: <export>
+configfile: pytest.ini (WARNING: ignoring pytest config in pyproject.toml!)
+======================== 1 failed, 270 passed in 0.69s =========================
+exit=1
+
+### control: tox.ini at the root, ignored, the same addopts (after pyproject.toml: not the config, the failing test still fails)
+.gitignore:224:/tox.ini	tox.ini
+setup exit=0
+rootdir: <export>
+configfile: pyproject.toml (WARNING: ignoring pytest config in tox.ini!)
+======================== 1 failed, 270 passed in 0.71s =========================
+exit=1
+
+### control: setup.cfg at the root, ignored, the same addopts (after pyproject.toml: not the config, the failing test still fails)
+.gitignore:224:/setup.cfg	setup.cfg
+setup exit=0
+rootdir: <export>
+configfile: pyproject.toml (WARNING: ignoring pytest config in setup.cfg!)
+======================== 1 failed, 270 passed in 0.67s =========================
+exit=1
+
+### control: pytest.ini under tests/, ignored (pytest looks from the invocation directory up, so not the config, the failing test still fails)
+.gitignore:224:tests/pytest.ini	tests/pytest.ini
+setup exit=0
+rootdir: <export>
+configfile: pyproject.toml
+======================== 1 failed, 270 passed in 0.68s =========================
+exit=1
+
+### control: the failing test removed (the clean tree passes)
+rootdir: <export>
+configfile: pyproject.toml
+============================= 270 passed in 0.70s ==============================
+exit=0
+
+### tests/unit/test_local.txt, ignored, a failing doctest (read: the run fails naming it)
+.gitignore:224:tests/unit/test_local.txt	tests/unit/test_local.txt
+setup exit=0
+rootdir: <export>
+configfile: pyproject.toml
+======================== 1 failed, 270 passed in 0.71s =========================
+exit=1
+12:tests/unit/test_local.txt F                                              [ 27%]
+23:___________________________ [doctest] test_local.txt ___________________________
+32:<export>/tests/unit/test_local.txt:3: DocTestFailure
+
+### tests/unit/testing/test_deep.txt, ignored, deeper (the glob is on the basename, read at any depth)
+.gitignore:224:tests/unit/testing/test_deep.txt	tests/unit/testing/test_deep.txt
+setup exit=0
+rootdir: <export>
+configfile: pyproject.toml
+======================== 1 failed, 270 passed in 0.68s =========================
+exit=1
+18:tests/unit/testing/test_deep.txt F                                       [ 85%]
+23:___________________________ [doctest] test_deep.txt ____________________________
+32:<export>/tests/unit/testing/test_deep.txt:3: DocTestFailure
+
+### control: tests/unit/local.txt, ignored, the same doctest under a name the glob does not match (not read: the run passes)
+.gitignore:224:tests/unit/local.txt	tests/unit/local.txt
+setup exit=0
+rootdir: <export>
+configfile: pyproject.toml
+============================= 270 passed in 0.70s ==============================
+exit=0
+
+### tox.ini at the root, ignored, unparsable (parsed for the warning, never the config: the run stops at a usage error, no false pass)
+.gitignore:224:/tox.ini	tox.ini
+setup exit=0
+ERROR: <export>/tox.ini:1: unexpected line: 'not an ini file'
+
+exit=4
+
+## 2. Event.at's check before and after issue #13 (probe r, rerun)
+
+The sibling's probe r (agent-os/specs/2026-11-07-2041-revision-after-pr-25-review/verification/
+probes.txt in patchbay-standards), the script below unchanged, rerun at the pins in uv.lock with
+`uv run --locked python utc_zone.py`, against src/patchbay/events.py before and after the change.
+Every case keeps its answer but ZeroForNone, accepted before and refused after.
+
+$ cat utc_zone.py
+"""Probe r: what Event.at's check, tzinfo.utcoffset(None) == timedelta(0), accepts and refuses."""
+
+from datetime import UTC, datetime, timedelta, timezone, tzinfo
+from zoneinfo import ZoneInfo
+
+from patchbay.errors import PatchbayValidationError
+from patchbay.events import Event
+
+
+class ZeroForNone(tzinfo):
+    """Answers zero for no particular instant, and an hour east of UTC at every real one."""
+
+    def utcoffset(self, dt: datetime | None) -> timedelta:
+        return timedelta(0) if dt is None else timedelta(hours=1)
+
+    def dst(self, dt: datetime | None) -> None:
+        return None
+
+    def tzname(self, dt: datetime | None) -> str:
+        return "ZERO-FOR-NONE"
+
+
+parsed_z = Event.model_validate_json(
+    '{"name": "thing.happened", "at": "2026-07-15T12:00:00Z", "source": "s", "correlation_id": "c"}'
+).at
+cases = [
+    ("datetime.UTC", datetime(2026, 7, 15, 12, tzinfo=UTC)),
+    ("timezone.utc", datetime(2026, 7, 15, 12, tzinfo=timezone.utc)),
+    ("ZoneInfo('UTC')", datetime(2026, 7, 15, 12, tzinfo=ZoneInfo("UTC"))),
+    ("pydantic's parsed Z", parsed_z),
+    ("naive", datetime(2026, 7, 15, 12)),
+    ("+01:00, fixed", datetime(2026, 7, 15, 12, tzinfo=timezone(timedelta(hours=1)))),
+    ("Europe/London in January", datetime(2026, 1, 15, 12, tzinfo=ZoneInfo("Europe/London"))),
+    ("Europe/London in July", datetime(2026, 7, 15, 12, tzinfo=ZoneInfo("Europe/London"))),
+    ("ZeroForNone", datetime(2026, 7, 15, 12, tzinfo=ZeroForNone())),
+]
+for label, at in cases:
+    zone = at.tzinfo
+    asked = "naive" if zone is None else repr(zone.utcoffset(None))
+    at_instant = "naive" if zone is None else repr(at.utcoffset())
+    try:
+        event = Event(name="thing.happened", at=at, source="s", correlation_id="c")
+        print(f"r {label}: utcoffset(None) {asked}, at the instant {at_instant}: accepted, "
+              f"held as {event.at.isoformat()}, tzinfo is UTC {event.at.tzinfo is UTC}, "
+              f"same instant {event.at == at}")
+    except PatchbayValidationError as error:
+        print(f"r {label}: utcoffset(None) {asked}, at the instant {at_instant}: refused, {error}")
+
+
+$ uv run --locked python utc_zone.py   (before the change)
+r datetime.UTC: utcoffset(None) datetime.timedelta(0), at the instant datetime.timedelta(0): accepted, held as 2026-07-15T12:00:00+00:00, tzinfo is UTC True, same instant True
+r timezone.utc: utcoffset(None) datetime.timedelta(0), at the instant datetime.timedelta(0): accepted, held as 2026-07-15T12:00:00+00:00, tzinfo is UTC True, same instant True
+r ZoneInfo('UTC'): utcoffset(None) datetime.timedelta(0), at the instant datetime.timedelta(0): accepted, held as 2026-07-15T12:00:00+00:00, tzinfo is UTC True, same instant True
+r pydantic's parsed Z: utcoffset(None) datetime.timedelta(0), at the instant datetime.timedelta(0): accepted, held as 2026-07-15T12:00:00+00:00, tzinfo is UTC True, same instant True
+r naive: utcoffset(None) naive, at the instant naive: refused, 1 validation error(s): at: Value error, an event's time is in UTC, given a naive time 2026-07-15T12:00:00
+r +01:00, fixed: utcoffset(None) datetime.timedelta(seconds=3600), at the instant datetime.timedelta(seconds=3600): refused, 1 validation error(s): at: Value error, an event's time is in UTC, offset zero all year, given 2026-07-15T12:00:00+01:00 (UTC+01:00)
+r Europe/London in January: utcoffset(None) None, at the instant datetime.timedelta(0): refused, 1 validation error(s): at: Value error, an event's time is in UTC, offset zero all year, given 2026-01-15T12:00:00+00:00 (Europe/London)
+r Europe/London in July: utcoffset(None) None, at the instant datetime.timedelta(seconds=3600): refused, 1 validation error(s): at: Value error, an event's time is in UTC, offset zero all year, given 2026-07-15T12:00:00+01:00 (Europe/London)
+r ZeroForNone: utcoffset(None) datetime.timedelta(0), at the instant datetime.timedelta(seconds=3600): accepted, held as 2026-07-15T11:00:00+00:00, tzinfo is UTC True, same instant True
+
+$ uv run --locked python utc_zone.py   (after the change)
+r datetime.UTC: utcoffset(None) datetime.timedelta(0), at the instant datetime.timedelta(0): accepted, held as 2026-07-15T12:00:00+00:00, tzinfo is UTC True, same instant True
+r timezone.utc: utcoffset(None) datetime.timedelta(0), at the instant datetime.timedelta(0): accepted, held as 2026-07-15T12:00:00+00:00, tzinfo is UTC True, same instant True
+r ZoneInfo('UTC'): utcoffset(None) datetime.timedelta(0), at the instant datetime.timedelta(0): accepted, held as 2026-07-15T12:00:00+00:00, tzinfo is UTC True, same instant True
+r pydantic's parsed Z: utcoffset(None) datetime.timedelta(0), at the instant datetime.timedelta(0): accepted, held as 2026-07-15T12:00:00+00:00, tzinfo is UTC True, same instant True
+r naive: utcoffset(None) naive, at the instant naive: refused, 1 validation error(s): at: Value error, an event's time is in UTC, given a naive time 2026-07-15T12:00:00
+r +01:00, fixed: utcoffset(None) datetime.timedelta(seconds=3600), at the instant datetime.timedelta(seconds=3600): refused, 1 validation error(s): at: Value error, an event's time is in UTC, offset zero all year, given 2026-07-15T12:00:00+01:00 (UTC+01:00)
+r Europe/London in January: utcoffset(None) None, at the instant datetime.timedelta(0): refused, 1 validation error(s): at: Value error, an event's time is in UTC, offset zero all year, given 2026-01-15T12:00:00+00:00 (Europe/London)
+r Europe/London in July: utcoffset(None) None, at the instant datetime.timedelta(seconds=3600): refused, 1 validation error(s): at: Value error, an event's time is in UTC, offset zero all year, given 2026-07-15T12:00:00+01:00 (Europe/London)
+r ZeroForNone: utcoffset(None) datetime.timedelta(0), at the instant datetime.timedelta(seconds=3600): refused, 1 validation error(s): at: Value error, an event's time is in UTC, offset zero all year, given 2026-07-15T12:00:00+01:00 (<__main__.ZeroForNone object at 0x106e42f60>)
+
+$ diff (before) (after)
+9c9
+< r ZeroForNone: utcoffset(None) datetime.timedelta(0), at the instant datetime.timedelta(seconds=3600): accepted, held as 2026-07-15T11:00:00+00:00, tzinfo is UTC True, same instant True
+---
+> r ZeroForNone: utcoffset(None) datetime.timedelta(0), at the instant datetime.timedelta(seconds=3600): refused, 1 validation error(s): at: Value error, an event's time is in UTC, offset zero all year, given 2026-07-15T12:00:00+01:00 (<__main__.ZeroForNone object at 0x106e42f60>)

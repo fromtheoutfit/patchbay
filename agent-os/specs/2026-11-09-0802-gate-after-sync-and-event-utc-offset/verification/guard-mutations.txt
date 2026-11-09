@@ -1,0 +1,360 @@
+The guard mutations of this spec, run 2026-11-09 on branch
+task/12-gate-spec-3-take-patchbay-standards-17-19-20-and-21-after-the-sync-that-brings-them-in,
+after the last edit to the gate's scripts. Each mutation is a fresh copy of the tree as git lists it
+(tracked plus untracked-not-ignored), made in a scratch directory outside the repository and not a
+git repository itself, with one guard this spec added or changed deleted, put back as it was or
+its status ignored, and the harness case that covers it run from that copy. The copy has no
+history, so the cases' runs of the scripts at 2c98c8a and earlier are skipped there, as the harness
+says. Every mutation must come back UNEXPECTED, harness exit 1, but M14, which removes the assertion
+that catches M7 and must therefore pass, showing no other assertion catches it. The unmutated runs
+of the same cases are in gate-negative-tests.txt. Below each mutation: the diff, then the UNEXPECTED
+runs of the harness, each with the lines above it, and the count. Nothing here is a gate step or
+part of the harness; it is the evidence that the cases discriminate.
+
+### M1: gate.sh step 1's root guard without --is-inside-work-tree, as it was at 2c98c8a
+--- scripts/gate.sh (as shipped)
++++ scripts/gate.sh (mutated)
+@@ -95,6 +95,5 @@
+ step "1/6  bash -n on every shell script under scripts/ (tracked or untracked, not ignored), in a tree with no tracked file a .gitignore ignores"
+ root=$(pwd -P)
+-inside=$(git rev-parse --is-inside-work-tree 2>/dev/null) && [ "$inside" = true ] &&
+-  cdup=$(git rev-parse --show-cdup 2>/dev/null) && [ -z "$cdup" ] ||
++cdup=$(git rev-parse --show-cdup 2>/dev/null) && [ -z "$cdup" ] ||
+   fail 1/6 "not a git work tree rooted at $root; the gate lists files with git ls-files"
+ tmp=$(mktemp -d) && [ -n "$tmp" ] && [ -d "$tmp" ] ||
+$ scripts/gate-negative-tests.sh g   (in the mutated copy)
+== 1/6  bash -n on every shell script under scripts/ (tracked or untracked, not ignored), in a tree with no tracked file a .gitignore ignores
+fatal: this operation must be run in a work tree
+FAIL  step 1/6: git could not list the tracked files a .gitignore ignores (see above)
+exit=1  UNEXPECTED (the output does not say: FAIL  step 1/6: not a git work tree rooted at <copy gg>/.git/tree/patchbay; the gate lists files with git ls-files)
+--
+== 1/6  bash -n on every shell script under scripts/ (tracked or untracked, not ignored), in a tree with no tracked file a .gitignore ignores
+fatal: this operation must be run in a work tree
+FAIL  step 1/6: git could not list the tracked files a .gitignore ignores (see above)
+exit=1  UNEXPECTED (the output does not say: FAIL  step 1/6: not a git work tree rooted at <copy gb>.git/tree/patchbay; the gate lists files with git ls-files)
+--
+21 runs, 2 unexpected
+harness exit=1
+result: as required
+
+### M2: gate.sh step 1's refusal listing, its status ignored
+--- scripts/gate.sh (as shipped)
++++ scripts/gate.sh (mutated)
+@@ -101,6 +101,5 @@
+   fail 1/6 "mktemp -d made no temporary directory for git's listings (see above)"
+ trap 'rm -rf "$tmp"' EXIT
+-git_list "$tmp/ignored" --cached --ignored --exclude-per-directory=.gitignore -- . ||
+-  fail 1/6 "git could not list the tracked files a .gitignore ignores (see above)"
++git_list "$tmp/ignored" --cached --ignored --exclude-per-directory=.gitignore -- . || true
+ if [ -s "$tmp/ignored" ]; then
+   fail_list 1/6 "tracked, but a .gitignore ignores them; stop ignoring each (a ! pattern, and for a file under an ignored directory, ignore dir/* rather than dir/ first) or stop tracking it (git rm --cached)" "$tmp/ignored"
+$ scripts/gate-negative-tests.sh g   (in the mutated copy)
+fatal: .git/index: index file smaller than expected
+fatal: .git/index: index file smaller than expected
+FAIL  step 1/6: git could not list the files under scripts/ (see above)
+exit=1  UNEXPECTED (the output does not say: index file smaller than expected
+--
+21 runs, 1 unexpected
+harness exit=1
+result: as required
+
+### M3: gate.sh step 1's listing of scripts/, its status ignored
+--- scripts/gate.sh (as shipped)
++++ scripts/gate.sh (mutated)
+@@ -106,5 +106,5 @@
+   fail_list 1/6 "tracked, but a .gitignore ignores them; stop ignoring each (a ! pattern, and for a file under an ignored directory, ignore dir/* rather than dir/ first) or stop tracking it (git rm --cached)" "$tmp/ignored"
+ fi
+-listed "$tmp/scripts" scripts || fail 1/6 "git could not list the files under scripts/ (see above)"
++listed "$tmp/scripts" scripts || true
+ n=0
+ while IFS= read -r -d '' f; do
+$ scripts/gate-negative-tests.sh g   (in the mutated copy)
+git (test shim): refusing: ls-files -z --cached --others --exclude-standard -- scripts
+scripts/gate.sh: line 118: /var/folders/l4/jz4g7psj5h1gxvk_6zp29rvm0000gn/T/tmp.eLhtGx5x6X/scripts: No such file or directory
+FAIL  step 1/6: git lists no file under scripts/
+exit=1  UNEXPECTED (the output does not say: git (test shim): refusing
+--
+21 runs, 1 unexpected
+harness exit=1
+result: as required
+
+### M4: gate.sh step 1's check of mktemp deleted
+--- scripts/gate.sh (as shipped)
++++ scripts/gate.sh (mutated)
+@@ -98,6 +98,5 @@
+   cdup=$(git rev-parse --show-cdup 2>/dev/null) && [ -z "$cdup" ] ||
+   fail 1/6 "not a git work tree rooted at $root; the gate lists files with git ls-files"
+-tmp=$(mktemp -d) && [ -n "$tmp" ] && [ -d "$tmp" ] ||
+-  fail 1/6 "mktemp -d made no temporary directory for git's listings (see above)"
++tmp=$(mktemp -d) || true
+ trap 'rm -rf "$tmp"' EXIT
+ git_list "$tmp/ignored" --cached --ignored --exclude-per-directory=.gitignore -- . ||
+$ scripts/gate-negative-tests.sh g   (in the mutated copy)
+mktemp (test shim): refusing
+scripts/gate.sh: line 82: /ignored.raw: Read-only file system
+FAIL  step 1/6: git could not list the tracked files a .gitignore ignores (see above)
+exit=1  UNEXPECTED (the output does not say: mktemp (test shim): refusing
+--
+21 runs, 1 unexpected
+harness exit=1
+result: as required
+
+### M5: gate.sh step 1's refusal of a tracked file a .gitignore ignores deleted
+--- scripts/gate.sh (as shipped)
++++ scripts/gate.sh (mutated)
+@@ -103,7 +103,4 @@
+ git_list "$tmp/ignored" --cached --ignored --exclude-per-directory=.gitignore -- . ||
+   fail 1/6 "git could not list the tracked files a .gitignore ignores (see above)"
+-if [ -s "$tmp/ignored" ]; then
+-  fail_list 1/6 "tracked, but a .gitignore ignores them; stop ignoring each (a ! pattern, and for a file under an ignored directory, ignore dir/* rather than dir/ first) or stop tracking it (git rm --cached)" "$tmp/ignored"
+-fi
+ listed "$tmp/scripts" scripts || fail 1/6 "git could not list the files under scripts/ (see above)"
+ n=0
+$ scripts/gate-negative-tests.sh p   (in the mutated copy)
+
+1 file would be reformatted, 19 files already formatted
+FAIL  step 2/6: a file is not formatted as ruff format would write it, or ruff could not read its settings (see above)
+exit=1  UNEXPECTED (the output does not say: FAIL  step 1/6: tracked, but a .gitignore ignores them; stop ignoring each (a ! pattern, and for a file under an ignored directory, ignore dir/* rather than dir/ first) or stop tracking it (git rm --cached):)
+--
+named=src/patchbay/local_settings.py  UNEXPECTED (listed: )
+--
+
+1 file would be reformatted, 20 files already formatted
+FAIL  step 2/6: a file is not formatted as ruff format would write it, or ruff could not read its settings (see above)
+exit=1  UNEXPECTED (the output does not say: FAIL  step 1/6: tracked, but a .gitignore ignores them; stop ignoring each (a ! pattern, and for a file under an ignored directory, ignore dir/* rather than dir/ first) or stop tracking it (git rm --cached):)
+--
+named=src/patchbay/local_settings.py tests/unit/local_settings.py  UNEXPECTED (listed: )
+--
+17 runs, 4 unexpected
+harness exit=1
+result: as required
+
+### M6: gate.sh's refusal reading --exclude-standard, the machine's excludes with it
+--- scripts/gate.sh (as shipped)
++++ scripts/gate.sh (mutated)
+@@ -101,5 +101,5 @@
+   fail 1/6 "mktemp -d made no temporary directory for git's listings (see above)"
+ trap 'rm -rf "$tmp"' EXIT
+-git_list "$tmp/ignored" --cached --ignored --exclude-per-directory=.gitignore -- . ||
++git_list "$tmp/ignored" --cached --ignored --exclude-standard -- . ||
+   fail 1/6 "git could not list the tracked files a .gitignore ignores (see above)"
+ if [ -s "$tmp/ignored" ]; then
+$ scripts/gate-negative-tests.sh p   (in the mutated copy)
+== 1/6  bash -n on every shell script under scripts/ (tracked or untracked, not ignored), in a tree with no tracked file a .gitignore ignores
+FAIL  step 1/6: tracked, but a .gitignore ignores them; stop ignoring each (a ! pattern, and for a file under an ignored directory, ignore dir/* rather than dir/ first) or stop tracking it (git rm --cached):
+        src/patchbay/local_settings.py
+exit=1  UNEXPECTED (the output does not say: ok   scripts/sync-standards.sh
+--
+== 1/6  bash -n on every shell script under scripts/ (tracked or untracked, not ignored), in a tree with no tracked file a .gitignore ignores
+FAIL  step 1/6: tracked, but a .gitignore ignores them; stop ignoring each (a ! pattern, and for a file under an ignored directory, ignore dir/* rather than dir/ first) or stop tracking it (git rm --cached):
+        src/patchbay/local_settings.py
+exit=1  UNEXPECTED (the output does not say: ok   scripts/sync-standards.sh
+--
+17 runs, 2 unexpected
+harness exit=1
+result: as required
+
+### M7: gate.sh's fail_list stopping at the first path
+--- scripts/gate.sh (as shipped)
++++ scripts/gate.sh (mutated)
+@@ -85,5 +85,5 @@
+   local f
+   printf 'FAIL  step %s: %s:\n' "$1" "$2" >&2
+-  while IFS= read -r -d '' f; do printf '        %s\n' "$f" >&2; done < "$3"
++  while IFS= read -r -d '' f; do printf '        %s\n' "$f" >&2; break; done < "$3"
+   exit 1
+ }
+$ scripts/gate-negative-tests.sh p   (in the mutated copy)
+FAIL  step 1/6: tracked, but a .gitignore ignores them; stop ignoring each (a ! pattern, and for a file under an ignored directory, ignore dir/* rather than dir/ first) or stop tracking it (git rm --cached):
+        src/patchbay/local_settings.py
+exit=1
+named=src/patchbay/local_settings.py tests/unit/local_settings.py  UNEXPECTED (listed: src/patchbay/local_settings.py)
+--
+17 runs, 1 unexpected
+harness exit=1
+result: as required
+
+### M8: gate.sh step 2's listing, its status ignored
+--- scripts/gate.sh (as shipped)
++++ scripts/gate.sh (mutated)
+@@ -120,5 +120,5 @@
+ 
+ step "2/6  uv sync --locked, then uv run --locked ruff format --check over the .py and .pyi files git lists (the locked toolchain; the formatter)"
+-listed "$tmp/tree" . || fail 2/6 "git could not list the files of the tree (see above)"
++listed "$tmp/tree" . || true
+ py=()
+ while IFS= read -r -d '' f; do
+$ scripts/gate-negative-tests.sh r   (in the mutated copy)
+git (test shim): refusing: ls-files -z --cached --others --exclude-standard -- .
+scripts/gate.sh: line 126: /var/folders/l4/jz4g7psj5h1gxvk_6zp29rvm0000gn/T/tmp.I7TLmwrWND/tree: No such file or directory
+FAIL  step 2/6: git lists no .py or .pyi file
+exit=1  UNEXPECTED (the output does not say: git (test shim): refusing
+--
+3 runs, 1 unexpected
+harness exit=1
+result: as required
+
+### M9: gate.sh step 4's listing, its status ignored
+--- scripts/gate.sh (as shipped)
++++ scripts/gate.sh (mutated)
+@@ -139,5 +139,5 @@
+ 
+ step "4/6  uv run --locked mypy over the .py and .pyi files git lists under src/ and tests/ ([tool.mypy] of pyproject.toml: strict)"
+-listed "$tmp/src" src tests || fail 4/6 "git could not list the files under src/ and tests/ (see above)"
++listed "$tmp/src" src tests || true
+ src=()
+ while IFS= read -r -d '' f; do
+$ scripts/gate-negative-tests.sh r   (in the mutated copy)
+git (test shim): refusing: ls-files -z --cached --others --exclude-standard -- src tests
+scripts/gate.sh: line 145: /var/folders/l4/jz4g7psj5h1gxvk_6zp29rvm0000gn/T/tmp.wfasj04fk1/src: No such file or directory
+FAIL  step 4/6: git lists no .py or .pyi file under src/ or tests/
+exit=1  UNEXPECTED (the output does not say: ok   no violation
+--
+3 runs, 1 unexpected
+harness exit=1
+result: as required
+
+### M10: gate.sh step 5's listing, its status ignored
+--- scripts/gate.sh (as shipped)
++++ scripts/gate.sh (mutated)
+@@ -149,6 +149,5 @@
+ 
+ step "5/6  uv run --locked pytest ([tool.pytest.ini_options] of pyproject.toml, over tests/, once nothing pytest would read is one git ignores)"
+-git_list "$tmp/pytest" --others --ignored --exclude-standard -- tests conftest.py pytest.toml .pytest.toml pytest.ini .pytest.ini ||
+-  fail 5/6 "git could not list what it ignores under tests/ (see above)"
++git_list "$tmp/pytest" --others --ignored --exclude-standard -- tests conftest.py pytest.toml .pytest.toml pytest.ini .pytest.ini || true
+ while IFS= read -r -d '' f; do
+   case "$f" in
+$ scripts/gate-negative-tests.sh r   (in the mutated copy)
+ok   agent-os/standards/base and the base: section of agent-os/standards/index.yml match patchbay-standards at e31f7dbfb474752339a43fe08a37ab26c7956f5c
+
+Gate steps 1-6 passed. Steps 7-9 are judgment, recorded in shape.md: Docs, Version, the standards retrospective.
+exit=0  UNEXPECTED (expected 1)
+--
+3 runs, 1 unexpected
+harness exit=1
+result: as required
+
+### M11: gate.sh step 5's arm refusing a root configuration file deleted
+--- scripts/gate.sh (as shipped)
++++ scripts/gate.sh (mutated)
+@@ -155,5 +155,4 @@
+     */__pycache__/*) ;;
+     *.py) fail 5/6 "$f is a .py file git ignores, which pytest would read; remove it, or stop ignoring it" ;;
+-    pytest.toml|.pytest.toml|pytest.ini|.pytest.ini) fail 5/6 "$f is a pytest configuration file git ignores, which pytest would read in place of pyproject.toml; remove it, or stop ignoring it" ;;
+     *) case "${f##*/}" in test*.txt) fail 5/6 "$f is a doctest file git ignores, which pytest would read; remove it, or stop ignoring it" ;; esac ;;
+   esac
+$ scripts/gate-negative-tests.sh q   (in the mutated copy)
+ok   agent-os/standards/base and the base: section of agent-os/standards/index.yml match patchbay-standards at e31f7dbfb474752339a43fe08a37ab26c7956f5c
+
+Gate steps 1-6 passed. Steps 7-9 are judgment, recorded in shape.md: Docs, Version, the standards retrospective.
+exit=0  UNEXPECTED (expected 1)
+--
+ok   agent-os/standards/base and the base: section of agent-os/standards/index.yml match patchbay-standards at e31f7dbfb474752339a43fe08a37ab26c7956f5c
+
+Gate steps 1-6 passed. Steps 7-9 are judgment, recorded in shape.md: Docs, Version, the standards retrospective.
+exit=0  UNEXPECTED (expected 1)
+--
+ok   agent-os/standards/base and the base: section of agent-os/standards/index.yml match patchbay-standards at e31f7dbfb474752339a43fe08a37ab26c7956f5c
+
+Gate steps 1-6 passed. Steps 7-9 are judgment, recorded in shape.md: Docs, Version, the standards retrospective.
+exit=0  UNEXPECTED (expected 1)
+--
+ok   agent-os/standards/base and the base: section of agent-os/standards/index.yml match patchbay-standards at e31f7dbfb474752339a43fe08a37ab26c7956f5c
+
+Gate steps 1-6 passed. Steps 7-9 are judgment, recorded in shape.md: Docs, Version, the standards retrospective.
+exit=0  UNEXPECTED (expected 1)
+--
+20 runs, 4 unexpected
+harness exit=1
+result: as required
+
+### M12: gate.sh step 5's arm refusing a test*.txt deleted
+--- scripts/gate.sh (as shipped)
++++ scripts/gate.sh (mutated)
+@@ -156,5 +156,4 @@
+     *.py) fail 5/6 "$f is a .py file git ignores, which pytest would read; remove it, or stop ignoring it" ;;
+     pytest.toml|.pytest.toml|pytest.ini|.pytest.ini) fail 5/6 "$f is a pytest configuration file git ignores, which pytest would read in place of pyproject.toml; remove it, or stop ignoring it" ;;
+-    *) case "${f##*/}" in test*.txt) fail 5/6 "$f is a doctest file git ignores, which pytest would read; remove it, or stop ignoring it" ;; esac ;;
+   esac
+ done < "$tmp/pytest"
+$ scripts/gate-negative-tests.sh q   (in the mutated copy)
+FAILED tests/unit/test_local.txt::test_local.txt
+1 failed, 271 passed in 0.71s
+FAIL  step 5/6: a test failed, or pytest could not read its configuration (see above)
+exit=1  UNEXPECTED (the output does not say: ok   no type error
+--
+FAILED tests/unit/testing/test_deep.txt::test_deep.txt
+1 failed, 271 passed in 0.70s
+FAIL  step 5/6: a test failed, or pytest could not read its configuration (see above)
+exit=1  UNEXPECTED (the output does not say: ok   no type error
+--
+20 runs, 2 unexpected
+harness exit=1
+result: as required
+
+### M13: the harness's upper_run not entering the upper-case path
+--- scripts/gate-negative-tests.sh (as shipped)
++++ scripts/gate-negative-tests.sh (mutated)
+@@ -204,5 +204,5 @@
+   local c=$1 want=$2 u text=(); shift 2
+   if [ "$want" -ne 0 ]; then text=("$1"); shift; fi
+-  u=$NEGUP/$(printf '%s' "$c/patchbay" | tr '[:lower:]' '[:upper:]')
++  u=$NEG/$c/patchbay
+   run "$c" "$want" ${text[@]+"${text[@]}"} bash -c 'cd "$1" && shift && exec "$@"' _ "$u" "$@"
+ }
+$ scripts/gate-negative-tests.sh g   (in the mutated copy)
+-- the copy entered through its path in upper case (this file system is case-insensitive): step 1 asks git whether this is the top and compares no paths, and step 6's sync-standards.sh does the same, so the gate must pass, exit 0:
+<copy g>/patchbay
+exit=0
+holds=<COPY G>/PATCHBAY  UNEXPECTED (not in the output, in order)
+--
+21 runs, 1 unexpected
+harness exit=1
+result: as required
+
+### M14: M7 with the harness's named no longer comparing: named alone caught M7, so this one must pass, harness exit 0
+--- scripts/gate.sh (as shipped)
++++ scripts/gate.sh (mutated)
+@@ -85,5 +85,5 @@
+   local f
+   printf 'FAIL  step %s: %s:\n' "$1" "$2" >&2
+-  while IFS= read -r -d '' f; do printf '        %s\n' "$f" >&2; done < "$3"
++  while IFS= read -r -d '' f; do printf '        %s\n' "$f" >&2; break; done < "$3"
+   exit 1
+ }
+--- scripts/gate-negative-tests.sh (as shipped)
++++ scripts/gate-negative-tests.sh (mutated)
+@@ -170,5 +170,5 @@
+   want=$(printf '        %s\n' "$@")
+   got=$(grep '^        ' "$NEG/run.out")
+-  if [ "$got" = "$want" ]; then
++  if true; then
+     echo "named=$*"
+   else
+$ scripts/gate-negative-tests.sh p   (in the mutated copy)
+17 runs, 0 unexpected
+harness exit=0
+result: as required
+
+### M15: p's reworded holds, given text mypy does not print
+--- scripts/gate-negative-tests.sh (as shipped)
++++ scripts/gate-negative-tests.sh (mutated)
+@@ -461,5 +461,5 @@
+    note "mypy walking files = [src, tests] under exclude_gitignore, the first spec's step 4, on the same file typed wrong and still force-added: it skips the tracked file .gitignore matches and passes (finding 3, the bug as it was):"
+    run p 0 uv run --locked mypy --exclude-gitignore
+-   holds 'Success: no issues found in'
++   holds 'Success: nothing found in'
+    printf 'import os\ndef f(x)->int:\n  return x\n' > "$NEG/p/patchbay/src/patchbay/local_settings.py" || die "p: write again"
+    sed -i.bak '/^local_settings\.py$/d' "$NEG/p/patchbay/.gitignore" || die "p: sed .gitignore"; rm "$NEG/p/patchbay/.gitignore.bak" || die "p: rm .bak"
+$ scripts/gate-negative-tests.sh p   (in the mutated copy)
+-- mypy walking files = [src, tests] under exclude_gitignore, the first spec's step 4, on the same file typed wrong and still force-added: it skips the tracked file .gitignore matches and passes (finding 3, the bug as it was):
+Success: no issues found in 19 source files
+exit=0
+holds=Success: nothing found in  UNEXPECTED (not in the output, in order)
+--
+17 runs, 1 unexpected
+harness exit=1
+result: as required
+
+15 mutations, 15 as required, 0 not
