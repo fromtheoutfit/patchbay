@@ -46,11 +46,18 @@ class Instrument(Protocol):
         """Every parameter the instrument exposes, each id once."""
 
     def get(self, parameter_id: ParameterId, /) -> Quantity:
-        """Return the parameter's value; ParameterNotFoundError when there is no such id."""
+        """Return the parameter's value, the one it holds.
+
+        After `set`, that is the value the parameter holds nearest the one given, as the instrument
+        measures it, which is the value given at a bound and at any value `get` has returned; at a
+        tie, either of the two. ParameterNotFoundError when there is no such id.
+        """
 
     def set(self, parameter_id: ParameterId, value: Quantity, /) -> None:
         """Set the parameter, then publish ParameterChanged.
 
+        The instrument may hold the nearest value it can to the one given (see `get`). The event's
+        `new` is the value the parameter holds after the set, the one `get` returns.
         ParameterNotFoundError, UnitMismatchError or ValueOutOfRangeError when the id, the unit or
         the value is not one the instrument takes; a refused value changes nothing and publishes
         nothing.

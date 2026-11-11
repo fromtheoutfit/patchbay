@@ -16,8 +16,8 @@ expect propagates as itself.
         contract_test(instrument, bus)
 
 Each test works out what it expects from the instrument's parameters and the contract alone,
-never from an implementation's code. Values are set at a parameter's bounds, so an instrument
-that stores what it is given gets back exactly what it was given, and refused one float past
+never from an implementation's code. Values are set at a parameter's bounds, which every
+instrument holds exactly, whatever its resolution (`Instrument.get`), and refused one float past
 them, so a check with any slack is caught.
 """
 

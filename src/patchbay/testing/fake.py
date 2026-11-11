@@ -4,7 +4,8 @@ It exists so the contracts are shown implementable and every later test has an i
 against. Eight parameters cover the three kinds and seven units. It renders one channel: a sine
 per note at the note's pitch, scaled by velocity and the level parameter, falling linearly to
 silence over the decay parameter's seconds, and cut at the note's end. The other parameters are
-stored, reported and patched like any other, and change nothing in the sound.
+stored, reported and patched like any other, and change nothing in the sound. It holds every
+value a parameter takes, so `get` returns exactly what `set` was given.
 
 Summed notes that pass full scale are clipped to it, and the result says so in its warnings: a
 degraded render, not a failed one. A render longer than MAX_SAMPLES, or faster than
