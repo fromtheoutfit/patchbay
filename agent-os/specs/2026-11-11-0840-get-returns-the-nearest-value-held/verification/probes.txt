@@ -1,0 +1,244 @@
+Probes run 2026-11-11 on branch feature/18-instrumentget-returns-the-nearest-value-the-parameter-holds-say-so-in-the-protocol, after Tasks 2-4, against the package as uv sync installs it.
+Each script ran from a scratch directory outside the repository, from the repository root, as
+`uv run --locked python <script>`; its text is shown above its output. Nothing was added to tests/.
+
+== probe_a_values_given.py
+
+"""Probe a: every value each contract test gives FakeInstrument, accepted or refused.
+
+For every `set` the probe records the parameter, the value, whether the instrument took it, whether
+it is one of the parameter's bounds, and whether it equals a value `get` returned for that parameter
+earlier in the same test. For every `load_patch` it records whether the patch loaded and, for one
+that did, whether each value in it is one `patch()` had returned (a value the instrument holds).
+"""
+
+from patchbay.errors import PatchbayError
+from patchbay.events import EventBus
+from patchbay.models import ParameterId, Patch, Quantity
+from patchbay.testing import CONTRACT_TESTS, FakeInstrument
+
+
+class Recording(FakeInstrument):
+    def __init__(self, bus: EventBus) -> None:
+        self.log: list[str] = []
+        self.got: dict[ParameterId, list[float]] = {}
+        self.patched: list[Patch] = []
+        super().__init__(bus)
+
+    def get(self, parameter_id: ParameterId, /) -> Quantity:
+        value = super().get(parameter_id)
+        self.got.setdefault(parameter_id, []).append(value.value)
+        return value
+
+    def set(self, parameter_id: ParameterId, value: Quantity, /) -> None:
+        parameter = next((p for p in self.parameters() if p.id == parameter_id), None)
+        if parameter is None:
+            bound = "no such id"
+        elif value.unit is not parameter.unit:
+            bound = f"unit {value.unit.value}, not {parameter.unit.value}"
+        elif value.value in (parameter.minimum, parameter.maximum):
+            bound = "at a bound"
+        else:
+            bound = f"NOT a bound ({parameter.kind}, [{parameter.minimum}, {parameter.maximum}])"
+        returned = value.value in self.got.get(parameter_id, [])
+        try:
+            super().set(parameter_id, value)
+        except PatchbayError as error:
+            self.log.append(f"  set {parameter_id} {value.value!r}: refused ({type(error).__name__}), {bound}")
+            raise
+        note = ", a value get returned" if returned else ""
+        self.log.append(f"  set {parameter_id} {value.value!r}: accepted, {bound}{note}")
+
+    def patch(self) -> Patch:
+        patch = super().patch()
+        self.patched.append(patch)
+        return patch
+
+    def load_patch(self, patch: Patch, /) -> None:
+        held = any(patch.values == earlier.values for earlier in self.patched)
+        try:
+            super().load_patch(patch)
+        except PatchbayError as error:
+            self.log.append(f"  load_patch of {len(patch.values)} values: refused ({type(error).__name__})")
+            raise
+        source = "every value one patch() returned" if held else "values patch() never returned"
+        self.log.append(f"  load_patch of {len(patch.values)} values: accepted, {source}")
+
+
+accepted_off_bound = 0
+for test in CONTRACT_TESTS:
+    bus = EventBus()
+    instrument = Recording(bus)
+    test(instrument, bus)
+    print(f"{test.__name__}:")
+    print("\n".join(instrument.log) if instrument.log else "  no set, no load_patch")
+    accepted_off_bound += sum(
+        1 for line in instrument.log if "set " in line and "accepted" in line and "NOT a bound" in line
+    )
+print()
+print(f"accepted sets not at a bound: {accepted_off_bound}")
+
+$ uv run --locked python probe_a_values_given.py
+
+parameters_are_unique_and_typed:
+  no set, no load_patch
+get_after_set_returns_what_was_set:
+  set level 1.0: accepted, at a bound
+  set cutoff 20.0: accepted, at a bound
+  set resonance 100.0: accepted, at a bound
+  set decay 10.0: accepted, at a bound
+  set detune 12.0: accepted, at a bound
+  set drive 24.0: accepted, at a bound
+  set waveform 3.0: accepted, at a bound
+  set mono 1.0: accepted, at a bound
+set_with_the_wrong_unit_raises_unit_mismatch:
+  set level 0.0: refused (UnitMismatchError), unit none, not ratio
+  set cutoff 0.0: refused (UnitMismatchError), unit none, not hz
+  set resonance 0.0: refused (UnitMismatchError), unit none, not percent
+  set decay 0.0: refused (UnitMismatchError), unit none, not seconds
+  set detune 0.0: refused (UnitMismatchError), unit none, not semitones
+  set drive 0.0: refused (UnitMismatchError), unit none, not db
+  set waveform 0.0: refused (UnitMismatchError), unit ratio, not none
+  set mono 0.0: refused (UnitMismatchError), unit ratio, not none
+an_unknown_id_raises_parameter_not_found:
+  set waveform.unknown 0.8: refused (ParameterNotFoundError), no such id
+a_value_out_of_range_raises_value_out_of_range:
+  set cutoff 20000.000000000004: refused (ValueOutOfRangeError), NOT a bound (continuous, [20.0, 20000.0])
+  set cutoff 19.999999999999996: refused (ValueOutOfRangeError), NOT a bound (continuous, [20.0, 20000.0])
+  set resonance 100.00000000000001: refused (ValueOutOfRangeError), NOT a bound (continuous, [0.0, 100.0])
+  set resonance -5e-324: refused (ValueOutOfRangeError), NOT a bound (continuous, [0.0, 100.0])
+  set decay 10.000000000000002: refused (ValueOutOfRangeError), NOT a bound (continuous, [0.01, 10.0])
+  set decay 0.009999999999999998: refused (ValueOutOfRangeError), NOT a bound (continuous, [0.01, 10.0])
+  set detune 12.000000000000002: refused (ValueOutOfRangeError), NOT a bound (continuous, [-12.0, 12.0])
+  set detune -12.000000000000002: refused (ValueOutOfRangeError), NOT a bound (continuous, [-12.0, 12.0])
+  set drive 24.000000000000004: refused (ValueOutOfRangeError), NOT a bound (continuous, [0.0, 24.0])
+  set drive -5e-324: refused (ValueOutOfRangeError), NOT a bound (continuous, [0.0, 24.0])
+  set waveform 3.0000000000000004: refused (ValueOutOfRangeError), NOT a bound (choice, [0.0, 3.0])
+  set waveform -5e-324: refused (ValueOutOfRangeError), NOT a bound (choice, [0.0, 3.0])
+  set waveform 0.5: refused (ValueOutOfRangeError), NOT a bound (choice, [0.0, 3.0])
+  set mono 1.0000000000000002: refused (ValueOutOfRangeError), NOT a bound (boolean, [0.0, 1.0])
+  set mono -5e-324: refused (ValueOutOfRangeError), NOT a bound (boolean, [0.0, 1.0])
+  set mono 0.5: refused (ValueOutOfRangeError), NOT a bound (boolean, [0.0, 1.0])
+patch_round_trips_through_load_patch:
+  set level 1.0: accepted, at a bound
+  load_patch of 8 values: accepted, every value one patch() returned
+a_rejected_patch_changes_nothing:
+  load_patch of 8 values: refused (PatchRejectedError)
+a_patch_refused_part_way_changes_nothing:
+  load_patch of 8 values: refused (PatchRejectedError)
+  load_patch of 8 values: refused (PatchRejectedError)
+  load_patch of 8 values: refused (PatchRejectedError)
+  load_patch of 8 values: refused (PatchRejectedError)
+  load_patch of 9 values: refused (PatchRejectedError)
+render_returns_the_declared_shape_and_sample_rate:
+  no set, no load_patch
+an_impossible_render_raises_render_failed:
+  no set, no load_patch
+set_emits_parameter_changed_once:
+  set level 1.0: accepted, at a bound
+load_patch_emits_patch_loaded_once:
+  load_patch of 8 values: accepted, every value one patch() returned
+render_emits_render_completed_once:
+  no set, no load_patch
+
+accepted sets not at a bound: 0
+
+exit 0
+
+== probe_b_whole_numbers.py
+
+"""Probe b: a parameter that takes whole numbers on a continuous range, against the wording.
+
+`Whole` is FakeInstrument with one more parameter, `voices`: continuous, unit none, 1 to 16. Like
+patchbay-vital's indexed scales it holds whole numbers only: `set` checks the value against the
+parameter first, then holds it rounded a half away from zero (`std::round`), and `load_patch` holds
+each `voices` value so too after the whole patch is checked. Every contract test runs against it;
+then the values the wording speaks of are set and read back.
+"""
+
+import math
+
+from patchbay.events import EventBus, ParameterChanged
+from patchbay.models import Parameter, ParameterId, Patch, Quantity, Unit
+from patchbay.testing import CONTRACT_TESTS, FakeInstrument, RecordingSubscriber
+from patchbay.testing.fake import PARAMETERS
+
+VOICES = ParameterId("voices")
+
+
+def half_away(value: float) -> float:
+    return math.copysign(math.floor(abs(value) + 0.5), value)
+
+
+class Whole(FakeInstrument):
+    def parameters(self) -> tuple[Parameter, ...]:
+        voices = Parameter(
+            id=VOICES,
+            label="Voices",
+            kind="continuous",
+            unit=Unit.none,
+            minimum=1.0,
+            maximum=16.0,
+            default=Quantity(value=1.0, unit=Unit.none),
+        )
+        return (*PARAMETERS, voices)
+
+    def set(self, parameter_id: ParameterId, value: Quantity, /) -> None:
+        if parameter_id == VOICES:
+            self._parameter(parameter_id).check(value)
+            value = Quantity(value=half_away(value.value), unit=value.unit)
+        super().set(parameter_id, value)
+
+    def load_patch(self, patch: Patch, /) -> None:
+        self._check_whole(patch)
+        values = dict(patch.values)
+        if VOICES in values:
+            values[VOICES] = Quantity(value=half_away(values[VOICES].value), unit=Unit.none)
+        super().load_patch(Patch(instrument=patch.instrument, values=values, opaque=patch.opaque))
+
+
+for test in CONTRACT_TESTS:
+    bus = EventBus()
+    test(Whole(bus), bus)
+    print(f"passes  {test.__name__}")
+
+print()
+bus = EventBus()
+whole = Whole(bus)
+recorder = RecordingSubscriber()
+bus.subscribe(ParameterChanged, recorder)
+for given in (16.0, 1.0, 3.4, 3.5, 2.5, 3.6, 15.5):
+    whole.set(VOICES, Quantity(value=given, unit=Unit.none))
+    held = whole.get(VOICES).value
+    new = recorder.of_type(ParameterChanged)[-1].new.value
+    print(f"set {given!r:>5} -> get {held!r:>5}, ParameterChanged.new {new!r:>5}")
+again = whole.get(VOICES)
+whole.set(VOICES, again)
+print(f"set(get()) {again.value!r} -> get {whole.get(VOICES).value!r}")
+
+$ uv run --locked python probe_b_whole_numbers.py
+
+passes  parameters_are_unique_and_typed
+passes  get_after_set_returns_what_was_set
+passes  set_with_the_wrong_unit_raises_unit_mismatch
+passes  an_unknown_id_raises_parameter_not_found
+passes  a_value_out_of_range_raises_value_out_of_range
+passes  patch_round_trips_through_load_patch
+passes  a_rejected_patch_changes_nothing
+passes  a_patch_refused_part_way_changes_nothing
+passes  render_returns_the_declared_shape_and_sample_rate
+passes  an_impossible_render_raises_render_failed
+passes  set_emits_parameter_changed_once
+passes  load_patch_emits_patch_loaded_once
+passes  render_emits_render_completed_once
+
+set  16.0 -> get  16.0, ParameterChanged.new  16.0
+set   1.0 -> get   1.0, ParameterChanged.new   1.0
+set   3.4 -> get   3.0, ParameterChanged.new   3.0
+set   3.5 -> get   4.0, ParameterChanged.new   4.0
+set   2.5 -> get   3.0, ParameterChanged.new   3.0
+set   3.6 -> get   4.0, ParameterChanged.new   4.0
+set  15.5 -> get  16.0, ParameterChanged.new  16.0
+set(get()) 16.0 -> get 16.0
+
+exit 0
