@@ -130,18 +130,41 @@ writes the entry, in that commit
 
 ### Changed
 
+- Twelfth spec, `agent-os/specs/2026-11-11-0935-get-revision-after-pr-19-review/`, the revision
+  after the owner's review of PR 19: twenty-one findings, each with its disposition in the spec's
+  `plan.md`, the patchbay-vital ones reproduced at its `84b5ae7` and the core ones at `6506e1d` in
+  its `verification/probes.txt`. No gate file and no contract test's body, name or order changed.
+  The version stays 0.0.1.
+  - `src/patchbay/contracts.py`: `Instrument.get` no longer says "nearest", which patchbay-vital
+    does not meet: after `set` it returns a value the parameter holds, not necessarily the one
+    given, which is the value given itself at a bound and at any value `get` has returned for it
+    that `set` takes. `Instrument.set` says the parameter may then hold another value. The module
+    docstring says no contract test sets a parameter away from its bounds.
+  - `src/patchbay/models.py`: `Parameter`'s docstring says the instrument holds each bound exactly.
+  - `src/patchbay/testing/contract_tests.py`: the module docstring says `Instrument.get` promises
+    every instrument holds its bounds exactly, the refusal one float past them in a sentence of its
+    own; `get_after_set_returns_what_was_set`'s docstring says "set at a bound"
+    (`verification/contract-tests-diff.txt`).
+  - `tests/unit/testing/test_contract_tests.py`: a fake whose continuous parameter holds whole
+    numbers only, a correct instrument of finite resolution, passes every contract test; it holds a
+    value other than the one given, gives back a value `get` returned, and publishes the value held
+    as `ParameterChanged.new`, the first test to tell that from the value given.
+
 - Eleventh spec, `agent-os/specs/2026-11-11-0840-get-returns-the-nearest-value-held/` (issue #18):
   `Instrument.get` says what it returns after `set`, the value the parameter holds nearest the one
   given, as the instrument measures it, which is the value given at a bound and at any value `get`
-  has returned, either of the two at a tie. Every departure from the issue's text is a Decision in
-  the spec's `shape.md`, each the owner's. Documentation only: no field, no contract test and no
-  gate file changed. The version stays 0.0.1.
+  has returned, either of the two at a tie; the twelfth spec, above, drops "nearest" and the tie,
+  and limits the second clause to values `set` takes. Every departure from the issue's text is a
+  Decision in the spec's `shape.md`, each the owner's. Documentation only: no field, no contract
+  test and no gate file changed. The version stays 0.0.1.
   - `src/patchbay/contracts.py`: `Instrument.get`'s docstring, as above; `Instrument.set`'s says
-    the instrument may hold the nearest value it can, and that the `ParameterChanged` it publishes
-    carries as `new` the value held after the set, the one `get` returns.
+    the instrument may hold the nearest value it can (the twelfth spec: another value), and that
+    the `ParameterChanged` it publishes carries as `new` the value held after the set, the one
+    `get` returns.
   - `src/patchbay/testing/contract_tests.py`: the module docstring's reason for setting values at
-    the bounds, which every instrument holds exactly whatever its resolution; no contract test's
-    body, name or order changed (`verification/contract-tests-diff.txt`).
+    the bounds, which `Instrument.get` promises every instrument holds exactly whatever its
+    resolution, as the twelfth spec words it; no contract test's body, name or order changed
+    (`verification/contract-tests-diff.txt`).
   - `src/patchbay/testing/fake.py`: the module docstring says the fake holds every value a
     parameter takes, so `get` returns exactly what `set` was given.
 

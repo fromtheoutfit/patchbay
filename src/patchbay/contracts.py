@@ -2,8 +2,10 @@
 
 An adapter's instrument implements `Instrument` structurally; it inherits nothing from here. mypy
 holds an implementation to the signatures, and the contract tests in `patchbay.testing` hold it
-to the behaviour. `isinstance(x, Instrument)` asks only whether `x` has every member, since that
-is all a runtime-checkable protocol can ask; `issubclass` is refused, `name` being a data member.
+to the behaviour each names in its docstring; none sets a parameter away from its bounds, so what
+`get` returns there rests on `get`'s and `set`'s own words and on no contract test.
+`isinstance(x, Instrument)` asks only whether `x` has every member, since that is all a
+runtime-checkable protocol can ask; `issubclass` is refused, `name` being a data member.
 
 Every method is synchronous. `render` may take wall-clock time, a hardware adapter's say, and its
 result records how long (`RenderResult.elapsed_seconds`). Each parameter is positional-only, so an
@@ -48,15 +50,15 @@ class Instrument(Protocol):
     def get(self, parameter_id: ParameterId, /) -> Quantity:
         """Return the parameter's value, the one it holds.
 
-        After `set`, that is the value the parameter holds nearest the one given, as the instrument
-        measures it, which is the value given at a bound and at any value `get` has returned; at a
-        tie, either of the two. ParameterNotFoundError when there is no such id.
+        After `set`, that is a value the parameter holds, not necessarily the one given: the value
+        given itself at a bound, and at any value `get` has returned for it that `set` takes.
+        ParameterNotFoundError when there is no such id.
         """
 
     def set(self, parameter_id: ParameterId, value: Quantity, /) -> None:
         """Set the parameter, then publish ParameterChanged.
 
-        The instrument may hold the nearest value it can to the one given (see `get`). The event's
+        The parameter may then hold a value other than the one given (see `get`). The event's
         `new` is the value the parameter holds after the set, the one `get` returns.
         ParameterNotFoundError, UnitMismatchError or ValueOutOfRangeError when the id, the unit or
         the value is not one the instrument takes; a refused value changes nothing and publishes

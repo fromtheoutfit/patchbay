@@ -1,0 +1,308 @@
+Probes run 2026-11-11 on branch feature/18-instrumentget-returns-the-nearest-value-the-parameter-holds-say-so-in-the-protocol, before any fix: patchbay at 6506e1d, patchbay-vital at 84b5ae7.
+Each script lives in a scratch directory outside both repositories, its text above its output,
+and each `$` line is the command as run, from this repository's root. The patchbay-vital cases
+run under that checkout's own interpreter with -B and PYTHONDONTWRITEBYTECODE=1, so nothing
+there is written; the core cases run under uv run --locked, against the tree at 6506e1d.
+
+== /private/tmp/claude-501/-Users-michaelwitwicki-Code-Audio-patchbay/6a18e3c3-aa62-4854-8ca3-b78c6467c7db/scratchpad/r2_vital_probes.py
+
+"""Probes V1-V5: what patchbay-vital's parameter map holds after a set, at 84b5ae7.
+
+A set goes display -> `MappedParameter.to_normalized` (the curve inverted and rounded to a float32
+preset, then that rounded to a float32 normalized value) -> the plugin's `fma32` back to a preset;
+the display then held is `MappedParameter.from_normalized` of the normalized value. Each case reads
+the committed map, `parameter_map()`, and writes nothing.
+"""
+
+import numpy as np
+
+from patchbay.models import ParameterId
+from patchbay_vital.parameters import parameter_map
+
+m = parameter_map()
+
+
+def neighbours(r: np.float32) -> list[float]:
+    """The float32 normalized values either side of `r`, and `r`, inside [0, 1]."""
+    side = (np.nextafter(r, np.float32(-1)), r, np.nextafter(r, np.float32(2)))
+    return [float(n) for n in side if 0.0 <= float(n) <= 1.0]
+
+
+print("== V1: beats_per_minute (findings 1 and 6)")
+p = m.find(ParameterId("beats_per_minute"))
+print(f"kind {p.parameter.kind}, curve {p.curve}, scale {p.scale.kind}")
+given = 216.85141355537831
+first = p.curve.to_preset(given)
+r = np.float32(p.to_normalized(given))
+print(f"given {given!r}: exact preset {(given - p.curve.offset) / p.curve.multiply!r}")
+print(f"  first rounding, float32 preset (DisplayCurve.to_preset): {first!r}")
+print(f"  second rounding, float32 normalized (NormalizedScale.to_normalized): {float(r)!r}")
+for n in neighbours(r):
+    held = p.from_normalized(n)
+    mark = "  <- held" if n == float(r) else ""
+    print(f"  normalized {n!r}: preset {p.scale.to_preset(n)!r}, display {held!r}, "
+          f"|display - given| {abs(held - given):.3e}{mark}")
+
+print()
+print("== V2: linear parameters, 400 sampled display values each, seed 1 (finding 1)")
+rng = np.random.default_rng(1)
+miss = total = 0
+for pid in m.ids():
+    p = m.find(pid)
+    if p.parameter.kind != "continuous" or p.curve.kind != "linear" or p.scale.kind != "linear":
+        continue
+    for d in rng.uniform(p.parameter.minimum, p.parameter.maximum, 400):
+        given = float(d)
+        r = np.float32(p.to_normalized(given))
+        held = p.from_normalized(float(r))
+        best = min(abs(p.from_normalized(n) - given) for n in neighbours(r))
+        total += 1
+        miss += abs(held - given) > best
+print(f"held a value other than the nearest one held: {miss} of {total} ({miss / total:.1%})")
+
+print()
+print("== V3: every continuous parameter on a linear scale, every curve, 300 each, seed 2")
+print("   (Decision 2: a sample, not a test; is the held value next to the one given?)")
+rng = np.random.default_rng(2)
+counts: dict[tuple[str, bool], int] = {}
+for pid in m.ids():
+    p = m.find(pid)
+    if p.parameter.kind != "continuous" or p.scale.kind != "linear":
+        continue
+    for d in rng.uniform(p.parameter.minimum, p.parameter.maximum, 300):
+        given = float(d)
+        r = np.float32(p.to_normalized(given))
+        held = p.from_normalized(float(r))
+        others = [p.from_normalized(n) for n in neighbours(r) if n != float(r)]
+        between = any(min(given, held) < v < max(given, held) for v in others)
+        key = (p.curve.kind, not between)
+        counts[key] = counts.get(key, 0) + 1
+for (curve, adjacent), count in sorted(counts.items()):
+    print(f"  {curve:22} {'next to the given' if adjacent else 'NOT next to it'}: {count}")
+print(f"  total next to the given: {sum(c for (_, a), c in counts.items() if a)} of "
+      f"{sum(counts.values())}")
+
+print()
+print("== V4: a shipped preset value outside the bounds (findings 2 and 7)")
+p = m.find(ParameterId("flanger_dry_wet"))
+print(f"flanger_dry_wet bounds [{p.parameter.minimum}, {p.parameter.maximum}]; "
+      f"preset 0.7072 displays {p.to_display(0.7072)!r}")
+print(f"  inside the bounds: {p.parameter.minimum <= p.to_display(0.7072) <= p.parameter.maximum}")
+
+print()
+print("== V5: volume's floor, every power of two from 2**-149 to 2**-43 (finding 2)")
+p = m.find(ParameterId("volume"))
+print(f"curve {p.curve}, scale [{p.scale.minimum}, {p.scale.maximum}]")
+print("a) as the normalized value the plugin reports (get = from_normalized):")
+fail = moved = 0
+for k in range(43, 150):
+    r0 = 2.0**-k
+    shown = p.from_normalized(r0)
+    r1 = p.to_normalized(shown)
+    fail += p.from_normalized(r1) != shown
+    moved += p.scale.to_preset(r1) != p.scale.to_preset(r0)
+print(f"   set(get()) display back changed: {fail} of 107; stored preset value moved: {moved} of 107")
+print("b) as the stored preset value a loaded preset holds (get = to_display), set through")
+print("   the normalized path:")
+for k in range(43, 150):
+    preset = 2.0**-k
+    shown = p.to_display(preset)
+    r1 = p.to_normalized(shown)
+    back = p.from_normalized(r1)
+    if back != shown:
+        print(f"   stored 2**-{k}: get {shown!r}, after set(get()) {back!r}, "
+              f"stored {p.scale.to_preset(r1)!r}")
+
+$ PYTHONDONTWRITEBYTECODE=1 /Users/michaelwitwicki/Code/Audio/patchbay-vital/.venv/bin/python -B /private/tmp/claude-501/-Users-michaelwitwicki-Code-Audio-patchbay/6a18e3c3-aa62-4854-8ca3-b78c6467c7db/scratchpad/r2_vital_probes.py
+
+== V1: beats_per_minute (findings 1 and 6)
+kind continuous, curve kind='linear' multiply=60.0 offset=0.0, scale linear
+given 216.85141355537831: exact preset 3.614190225922972
+  first rounding, float32 preset (DisplayCurve.to_preset): 3.6141903400421143
+  second rounding, float32 normalized (NormalizedScale.to_normalized): 0.7030408382415771
+  normalized 0.7030407786369324: preset 3.614190101623535, display 216.8514060974121, |display - given| 7.458e-06
+  normalized 0.7030408382415771: preset 3.6141905784606934, display 216.8514347076416, |display - given| 2.115e-05  <- held
+  normalized 0.7030408978462219: preset 3.6141908168792725, display 216.85144901275635, |display - given| 3.546e-05
+
+== V2: linear parameters, 400 sampled display values each, seed 1 (finding 1)
+held a value other than the nearest one held: 8236 of 140800 (5.8%)
+
+== V3: every continuous parameter on a linear scale, every curve, 300 each, seed 2
+   (Decision 2: a sample, not a test; is the held value next to the one given?)
+  exponential            next to the given: 42300
+  exponential_inverted   next to the given: 5100
+  linear                 next to the given: 105600
+  quadratic              next to the given: 3300
+  quartic                next to the given: 9000
+  square_root            next to the given: 300
+  total next to the given: 165600 of 165600
+
+== V4: a shipped preset value outside the bounds (findings 2 and 7)
+flanger_dry_wet bounds [0.0, 100.0]; preset 0.7072 displays 141.44
+  inside the bounds: False
+
+== V5: volume's floor, every power of two from 2**-149 to 2**-43 (finding 2)
+curve kind='square_root' multiply=1.0 offset=-80.0, scale [0.0, 7399.4404296875]
+a) as the normalized value the plugin reports (get = from_normalized):
+   set(get()) display back changed: 0 of 107; stored preset value moved: 91 of 107
+b) as the stored preset value a loaded preset holds (get = to_display), set through
+   the normalized path:
+   stored 2**-43: get -79.99999966282522, after set(get()) -79.99999966282523, stored 1.1368682416908887e-13
+   stored 2**-45: get -79.99999983141261, after set(get()) -79.99999983141262, stored 2.8421706042272218e-14
+
+exit 0
+
+== /private/tmp/claude-501/-Users-michaelwitwicki-Code-Audio-patchbay/6a18e3c3-aa62-4854-8ca3-b78c6467c7db/scratchpad/r2_core_probes.py
+
+"""Probes C1 and C2: the reviewed record's probes a and b at 6506e1d, and what they could not show.
+
+C1 (finding 18): probe a's "a value get returned" check, given a positive control. The recorder is
+probe a's own; the control sets a parameter to the value `get` returned, which must fire the check,
+and then all thirteen contract tests run, which must not.
+
+C2 (finding 8): probe b's last line, `set(get())`, ran only after 15.5 was held as 16.0, a bound.
+`MovesInterior` holds bounds exactly but moves an interior whole number it is set to; the old
+sequence prints the same lines for it as for probe b's honest fake, and `set(get())` after 3.4 tells
+them apart.
+"""
+
+import math
+
+from patchbay.errors import PatchbayError
+from patchbay.events import EventBus
+from patchbay.models import Parameter, ParameterId, Quantity, Unit
+from patchbay.testing import CONTRACT_TESTS, FakeInstrument
+from patchbay.testing.fake import PARAMETERS
+
+# --- C1 -------------------------------------------------------------------------------------------
+
+
+class Recording(FakeInstrument):
+    """Probe a's recorder: each set, and whether its value is one `get` returned in the test."""
+
+    def __init__(self, bus: EventBus) -> None:
+        self.log: list[str] = []
+        self.got: dict[ParameterId, list[float]] = {}
+        super().__init__(bus)
+
+    def get(self, parameter_id: ParameterId, /) -> Quantity:
+        value = super().get(parameter_id)
+        self.got.setdefault(parameter_id, []).append(value.value)
+        return value
+
+    def set(self, parameter_id: ParameterId, value: Quantity, /) -> None:
+        returned = value.value in self.got.get(parameter_id, [])
+        try:
+            super().set(parameter_id, value)
+        except PatchbayError:
+            self.log.append(f"set {parameter_id} {value.value!r}: refused")
+            raise
+        note = ", a value get returned" if returned else ""
+        self.log.append(f"set {parameter_id} {value.value!r}: accepted{note}")
+
+
+print("== C1: probe a's check, with a positive control (finding 18)")
+control = Recording(EventBus())
+level = ParameterId("level")
+control.set(level, control.get(level))
+print(f"control, set(level, get(level)): {control.log[-1]}")
+print(f"  the check fires: {'a value get returned' in control.log[-1]}")
+fired = 0
+for test in CONTRACT_TESTS:
+    bus = EventBus()
+    instrument = Recording(bus)
+    test(instrument, bus)
+    fired += sum("a value get returned" in line for line in instrument.log)
+print(f"the thirteen contract tests: the check fires {fired} times")
+
+# --- C2 -------------------------------------------------------------------------------------------
+
+VOICES = ParameterId("voices")
+VOICES_PARAMETER = Parameter(
+    id=VOICES,
+    label="Voices",
+    kind="continuous",
+    unit=Unit.none,
+    minimum=1.0,
+    maximum=16.0,
+    default=Quantity(value=1.0, unit=Unit.none),
+)
+
+
+def half_away(value: float) -> float:
+    return math.copysign(math.floor(abs(value) + 0.5), value)
+
+
+class Honest(FakeInstrument):
+    """Probe b's fake: holds whole numbers, rounded a half away from zero."""
+
+    def parameters(self) -> tuple[Parameter, ...]:
+        return (*PARAMETERS, VOICES_PARAMETER)
+
+    def hold(self, value: float) -> float:
+        return half_away(value)
+
+    def set(self, parameter_id: ParameterId, value: Quantity, /) -> None:
+        if parameter_id == VOICES:
+            VOICES_PARAMETER.check(value)
+            value = Quantity(value=self.hold(value.value), unit=value.unit)
+        super().set(parameter_id, value)
+
+
+class MovesInterior(Honest):
+    """Holds bounds exactly, but an interior whole number it is set to moves up one."""
+
+    def hold(self, value: float) -> float:
+        if value.is_integer() and VOICES_PARAMETER.minimum < value < VOICES_PARAMETER.maximum:
+            return value + 1.0
+        return half_away(value)
+
+
+def old_sequence(instrument: Honest) -> list[str]:
+    lines = []
+    for given in (16.0, 1.0, 3.4, 3.5, 2.5, 3.6, 15.5):
+        instrument.set(VOICES, Quantity(value=given, unit=Unit.none))
+        lines.append(f"set {given!r:>5} -> get {instrument.get(VOICES).value!r:>5}")
+    again = instrument.get(VOICES)
+    instrument.set(VOICES, again)
+    lines.append(f"set(get()) {again.value!r} -> get {instrument.get(VOICES).value!r}")
+    return lines
+
+
+def after_interior(instrument: Honest) -> str:
+    instrument.set(VOICES, Quantity(value=3.4, unit=Unit.none))
+    again = instrument.get(VOICES)
+    instrument.set(VOICES, again)
+    return f"set 3.4, then set(get()) {again.value!r} -> get {instrument.get(VOICES).value!r}"
+
+
+print()
+print("== C2: probe b's set(get()) ran only at a bound (finding 8)")
+honest, moving = old_sequence(Honest(EventBus())), old_sequence(MovesInterior(EventBus()))
+for line_h, line_m in zip(honest, moving, strict=True):
+    print(f"  honest: {line_h:32} moves interior: {line_m}")
+print(f"the old sequence tells them apart: {honest != moving}")
+print(f"  honest:         {after_interior(Honest(EventBus()))}")
+print(f"  moves interior: {after_interior(MovesInterior(EventBus()))}")
+
+$ uv run --locked python /private/tmp/claude-501/-Users-michaelwitwicki-Code-Audio-patchbay/6a18e3c3-aa62-4854-8ca3-b78c6467c7db/scratchpad/r2_core_probes.py
+
+== C1: probe a's check, with a positive control (finding 18)
+control, set(level, get(level)): set level 0.8: accepted, a value get returned
+  the check fires: True
+the thirteen contract tests: the check fires 0 times
+
+== C2: probe b's set(get()) ran only at a bound (finding 8)
+  honest: set  16.0 -> get  16.0           moves interior: set  16.0 -> get  16.0
+  honest: set   1.0 -> get   1.0           moves interior: set   1.0 -> get   1.0
+  honest: set   3.4 -> get   3.0           moves interior: set   3.4 -> get   3.0
+  honest: set   3.5 -> get   4.0           moves interior: set   3.5 -> get   4.0
+  honest: set   2.5 -> get   3.0           moves interior: set   2.5 -> get   3.0
+  honest: set   3.6 -> get   4.0           moves interior: set   3.6 -> get   4.0
+  honest: set  15.5 -> get  16.0           moves interior: set  15.5 -> get  16.0
+  honest: set(get()) 16.0 -> get 16.0      moves interior: set(get()) 16.0 -> get 16.0
+the old sequence tells them apart: False
+  honest:         set 3.4, then set(get()) 3.0 -> get 3.0
+  moves interior: set 3.4, then set(get()) 3.0 -> get 4.0
+
+exit 0

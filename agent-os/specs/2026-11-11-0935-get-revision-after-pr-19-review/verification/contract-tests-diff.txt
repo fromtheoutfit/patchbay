@@ -1,0 +1,26 @@
+diff --git a/src/patchbay/testing/contract_tests.py b/src/patchbay/testing/contract_tests.py
+index bebd470..fe9d2e6 100644
+--- a/src/patchbay/testing/contract_tests.py
++++ b/src/patchbay/testing/contract_tests.py
+@@ -16,9 +16,9 @@ expect propagates as itself.
+         contract_test(instrument, bus)
+ 
+ Each test works out what it expects from the instrument's parameters and the contract alone,
+-never from an implementation's code. Values are set at a parameter's bounds, which every
+-instrument holds exactly, whatever its resolution (`Instrument.get`), and refused one float past
+-them, so a check with any slack is caught.
++never from an implementation's code. Values are set at a parameter's bounds, which
++`Instrument.get` promises every instrument holds exactly, whatever its resolution. A value one
++float past a bound is set too and must be refused, so a check with any slack is caught.
+ """
+ 
+ import math
+@@ -143,7 +143,7 @@ def parameters_are_unique_and_typed(instrument: Instrument, bus: EventBus) -> No
+ 
+ 
+ def get_after_set_returns_what_was_set(instrument: Instrument, bus: EventBus) -> None:
+-    """Check that, for every parameter, `get` returns the value `set` was given."""
++    """Check that, for every parameter set at a bound, `get` returns the value `set` was given."""
+     del bus
+     test = "get_after_set_returns_what_was_set"
+     for parameter in instrument.parameters():

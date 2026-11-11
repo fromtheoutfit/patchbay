@@ -182,7 +182,8 @@ class Parameter(PatchbayModel, frozen=True):
     """One parameter an instrument exposes: what it is called, what it takes, where it starts.
 
     A continuous parameter takes any value in `[minimum, maximum]` in its unit. A choice takes the
-    index of one of its `choices`, a boolean 0 or 1, each as a whole number in `Unit.none`.
+    index of one of its `choices`, a boolean 0 or 1, each as a whole number in `Unit.none`. The
+    instrument holds each bound exactly, as `Instrument.get` promises.
     """
 
     id: ParameterId = Field(min_length=1)

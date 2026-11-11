@@ -5,7 +5,8 @@ adapter's would, parametrized over CONTRACT_TESTS with the conftest's fixtures. 
 runs against a FakeInstrument that breaks exactly the property it checks, and must raise
 ContractViolationError naming itself: a test that cannot fail proves nothing. A fake with
 parameters at the largest bounds a float has passes every one, so no test fails a correct
-instrument at its edges.
+instrument at its edges; and one with a parameter holding whole numbers only passes every one, so
+none fails an instrument of finite resolution.
 """
 
 import sys
@@ -26,7 +27,13 @@ from patchbay.models import (
     RenderResult,
     Unit,
 )
-from patchbay.testing import CONTRACT_TESTS, ContractTest, ContractViolationError, FakeInstrument
+from patchbay.testing import (
+    CONTRACT_TESTS,
+    ContractTest,
+    ContractViolationError,
+    FakeInstrument,
+    RecordingSubscriber,
+)
 from patchbay.testing import contract_tests as contract
 from patchbay.testing.fake import MAX_SAMPLES, PARAMETERS
 
@@ -290,6 +297,86 @@ def test_a_correct_instrument_with_the_widest_bounds_passes(contract_test: Contr
     """
     bus = EventBus()
     contract_test(_WideRange(bus), bus)
+
+
+# --- a correct instrument of finite resolution ---------------------------------------------------
+
+_VOICES = Parameter(
+    id=ParameterId("voices"),
+    label="Voices",
+    kind="continuous",
+    unit=Unit.none,
+    minimum=1.0,
+    maximum=16.0,
+    default=Quantity(value=1.0, unit=Unit.none),
+)
+
+
+class _HoldsWholeNumbers(FakeInstrument):
+    """The fake with one more parameter, continuous from 1 to 16, that holds whole numbers only.
+
+    It takes any value in its range, as a continuous parameter does, and holds it rounded, so a
+    value between two whole numbers is held as one of them: an instrument of finite resolution,
+    correct by `Instrument.get`. A patch giving it a value it does not hold is refused whole. It
+    lives here, beside `_WideRange`, and is not shipped in `patchbay.testing`.
+    """
+
+    def parameters(self) -> tuple[Parameter, ...]:
+        return (*PARAMETERS, _VOICES)
+
+    def set(self, parameter_id: ParameterId, value: Quantity, /) -> None:
+        if parameter_id == _VOICES.id:
+            _VOICES.check(value)
+            value = Quantity(value=float(round(value.value)), unit=value.unit)
+        super().set(parameter_id, value)
+
+    def load_patch(self, patch: Patch, /) -> None:
+        voices = patch.values.get(_VOICES.id)
+        if voices is not None and not voices.value.is_integer():
+            msg = f"voices holds whole numbers only, given {voices.value!r}"
+            raise PatchRejectedError(msg)
+        super().load_patch(patch)
+
+
+@pytest.mark.parametrize("contract_test", CONTRACT_TESTS, ids=lambda test: test.__name__)
+def test_a_correct_instrument_of_finite_resolution_passes(contract_test: ContractTest) -> None:
+    """An instrument that cannot hold every value it takes passes: the suite expects back a bound.
+
+    The review of PR 19 found the suite's reliance on what every instrument holds exactly shown
+    only in a probe; this holds it, so a contract test that expected an arbitrary value back would
+    fail here.
+    """
+    bus = EventBus()
+    contract_test(_HoldsWholeNumbers(bus), bus)
+
+
+def test_the_whole_number_fake_holds_a_value_other_than_the_one_given() -> None:
+    """Set between two whole numbers, it holds one of them, so the test above is not vacuous."""
+    instrument = _HoldsWholeNumbers(EventBus())
+    instrument.set(_VOICES.id, Quantity(value=3.4, unit=Unit.none))
+    assert instrument.get(_VOICES.id) == Quantity(value=3.0, unit=Unit.none)
+
+
+def test_the_whole_number_fake_gives_back_a_value_get_returned() -> None:
+    """Set to a value `get` returned between its bounds, `get` returns that value again."""
+    instrument = _HoldsWholeNumbers(EventBus())
+    instrument.set(_VOICES.id, Quantity(value=3.4, unit=Unit.none))
+    held = instrument.get(_VOICES.id)
+    instrument.set(_VOICES.id, held)
+    assert instrument.get(_VOICES.id) == held
+
+
+def test_the_whole_number_fake_publishes_the_value_held_as_new() -> None:
+    """ParameterChanged's `new` is the value held after the set, which is not the value given."""
+    bus = EventBus()
+    recorder = RecordingSubscriber()
+    bus.subscribe(None, recorder)
+    instrument = _HoldsWholeNumbers(bus)
+    given = Quantity(value=3.4, unit=Unit.none)
+    instrument.set(_VOICES.id, given)
+    held = instrument.get(_VOICES.id)
+    assert [event.new for event in recorder.of_type(ParameterChanged)] == [held]
+    assert held != given
 
 
 def test_the_contract_tests_are_never_collected_by_pytest() -> None:
